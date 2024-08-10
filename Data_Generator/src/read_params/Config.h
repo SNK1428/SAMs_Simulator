@@ -2,17 +2,15 @@
 #define CONFIG_H
 
 #include <map>
-#include <vector>
 #include <string>
+#include <vector>
 
+#include <algorithm>
+#include <iostream>
 #include <sstream>
 #include <stdexcept>
-#include <vector>
-#include <iostream>
-#include <vector>
-#include <sstream>
 #include <string>
-#include <algorithm>
+#include <vector>
 
 #include "../utils/Utils_2.h"
 
@@ -30,7 +28,6 @@ namespace Config
                 throw std::runtime_error("Conversion failed for value: " + value);
             return result;
         }
-
 
     void initialize_config(const std::string &filename);
 
@@ -79,14 +76,15 @@ namespace Config
     template <typename T>
         std::vector<T> get_config_values_vec(const std::string &key)
         {
-            if(config->find(key) != config->end())
+            if (config->find(key) != config->end())
             {
-                const auto & values = config->at(key);
+                const auto &values = config->at(key);
                 std::vector<T> results(values.size());
                 size_t ptr = 0;
-                while (ptr < values.size()){
+                while (ptr < values.size())
+                {
                     results[ptr] = convert<T>(values[ptr]);
-                    ptr+=1;
+                    ptr += 1;
                 }
                 return results;
             }
@@ -94,23 +92,22 @@ namespace Config
                 throw std::runtime_error("Key not found: " + key);
         }
 
+    // 读取二维数组
     template <typename T>
         std::vector<std::vector<T>> get_config_matrix(const std::string &key)
         {
-            static auto reconstruct_str = [](const std::vector<std::string>& values) -> std::string
-            {
+            static auto reconstruct_str = [](const std::vector<std::string> &values) -> std::string {
                 auto merged_values = insert_separator_to_vec(values, ",");
                 std::string res;
-                for(auto ele : merged_values)
+                for (auto ele : merged_values)
                     res += ele;
                 return res;
             };
 
             // 去掉字符串中的空格
-            static auto remove_spaces = [](const std::string& input) -> std::string
-            {
+            static auto remove_spaces = [](const std::string &input) -> std::string {
                 std::string output;
-                std::remove_copy_if(input.begin(), input.end(), std::back_inserter(output), [](char c){ return std::isspace(c); });
+                std::remove_copy_if(input.begin(), input.end(), std::back_inserter(output), [](char c) { return std::isspace(c); });
                 return output;
             };
 
@@ -126,8 +123,10 @@ namespace Config
                 std::string segment;
                 while (std::getline(ss, segment, ']'))
                 {
-                    if (segment.empty() || segment == ",") continue;
-                    if (segment[0] == ',') segment = segment.substr(1); // 去掉前面的逗号
+                    if (segment.empty() || segment == ",")
+                        continue;
+                    if (segment[0] == ',')
+                        segment = segment.substr(1); // 去掉前面的逗号
 
                     std::stringstream rowStream(segment.substr(1)); // 去掉前面的中括号
                     std::vector<T> row;
@@ -144,6 +143,5 @@ namespace Config
             else
                 throw std::runtime_error("Key not found: " + key);
         }
-}
+} // namespace Config
 #endif // CONFIG_H
-

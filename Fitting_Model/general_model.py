@@ -93,7 +93,7 @@ class general_model(ABC):
                 self.residual_each_param.append(residuals)              # 记录每个超参数的模型的残差
             except ValueError:
                 print('fit failed with params: ', param,', model: ', clf)
-                self.residual_each_param.append(-sys.maxsize)           # 记录每个超参数的模型的残差
+                self.residual_each_param.append(-sys.maxsize)           # 记录每个超参数的模型的残差，失败时，此值是最小值
                 return best_r2      # 有时候超参数太烂会导致交叉验证失败，返回ValueError异常，此时跳过这个回合
             return record_best(clf, param, residuals, best_r2)
     

@@ -9,6 +9,7 @@ Data_Generator/.clang-format
 Data_Generator/.vimspector.json
 Fitting_Model/.vimspector.json
 Fitting_Model/external/
+Fitting_Model/record_dir/
 Fitting_Model/log.txt
 Fitting_Model/model_list.pkl
 Fitting_Model/__pycache__/
@@ -18,3 +19,4 @@ Data/onehot_data/*
 Data/maps/*
 Data/article_sets/
 Data/mole_sets/
+Data/input/

@@ -1,37 +1,40 @@
-import os
-import sys
+# 标准库导入
+from logging import root
 import math
+import os
 import re
-import pickle
+import sys
+import time
+import numbers
 import warnings
 from collections import defaultdict, Counter
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor, as_completed
+from multiprocessing import Pool
 from typing import Tuple
-from sklearn.preprocessing import MinMaxScaler
-import time
+import pickle
+from pathlib import Path
 
+# 第三方库导入
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
-from scipy.stats import uniform, randint
-from sklearn.decomposition import PCA, SparsePCA, FactorAnalysis, KernelPCA, TruncatedSVD
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, VotingClassifier
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.decomposition import (PCA, SparsePCA, FactorAnalysis, KernelPCA, TruncatedSVD)
+from sklearn.ensemble import (RandomForestClassifier, AdaBoostClassifier, VotingClassifier)
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
-from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold, RandomizedSearchCV
-from sklearn.naive_bayes import GaussianNB, MultinomialNB, CategoricalNB, ComplementNB
+from sklearn.metrics import (accuracy_score, mean_squared_error, r2_score)
+from sklearn.model_selection import (train_test_split, cross_val_score, StratifiedKFold, RandomizedSearchCV)
+from sklearn.naive_bayes import (GaussianNB, MultinomialNB, CategoricalNB, ComplementNB)
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
-from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier
-from imblearn.over_sampling import SMOTE, ADASYN, BorderlineSMOTE
+from imblearn.over_sampling import (SMOTE, ADASYN, BorderlineSMOTE)
 from imblearn.combine import SMOTEENN
-from sklearn.datasets import make_classification
-import numbers
+from scipy.stats import uniform, randint
 import shap
 
+# 本地库导入
 from self_ada import self_ada
 from self_bayesian import self_BO
 from self_knn import self_knn
@@ -42,20 +45,6 @@ from self_svm import self_svm
 from self_xgb import self_xgb
 from self_mlp_pytorch import pytorch_model_sklearn, self_mlp_torch, Model
 
-import numpy as np
-import shap
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import threading
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.naive_bayes import GaussianNB
-from xgboost import XGBClassifier
-import numpy as np
-import shap
-from multiprocessing import Pool
-import torch
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.naive_bayes import GaussianNB
-from xgboost import XGBClassifier
 
 # 将上一级目录添加到 sys.path
 from utils import grid_param_builder, load_iris_shuffle, write_content_to_file
@@ -270,20 +259,20 @@ def binning(y_data:np.ndarray, num_buckets=10, method='uniform', min_bucket_size
 class voting_model:
     
     def __init__(self, model_list:list, essemble_method='hard') -> None:
-        self._model_list = model_list
+        self.model_list = model_list
         self.essemble_method = essemble_method
         self.pertuba_accu_list = []
         self.shap_accu_list = []
 
     def clear_attribute(self):
-        self._model_list = []
+        self.model_list = []
         self.essemble_method = ''
         self.pertuba_accu_list = []
         self.shap_accu_list = []
 
 
     def fit(self, x_data:np.ndarray, y_data:np.ndarray):
-        for model in self._model_list:
+        for model in self.model_list:
             # print(model)
             # print(x_data.shape, y_data.shape)
             model.fit(x_data, y_data)
@@ -319,7 +308,7 @@ class voting_model:
     def predict_proba(self, x_data:np.ndarray):
         '''判断准确率'''
         proba_list = []
-        for model in self._model_list:
+        for model in self.model_list:
             proba_list.append(model.predict_proba(x_data))
         return proba_list
 
@@ -343,9 +332,9 @@ class voting_model:
 
         elif method == 'soft':
             # 软加权，重要性的权重来自于模型的R²
-            accu_list = np.zeros(len(self._model_list))
-            for i in range(len(self._model_list)):
-                y_predict = self._model_list[i].predict(x_test)
+            accu_list = np.zeros(len(self.model_list))
+            for i in range(len(self.model_list)):
+                y_predict = self.model_list[i].predict(x_test)
                 accu_list[i] = r2_score(y_test, y_predict)
 
             weights = accu_list / accu_list.sum()
@@ -375,7 +364,7 @@ class voting_model:
         '''微扰法，重要性计算'''
         self.pertuba_accu_list = []
         cnt = 0
-        for model in self._model_list:
+        for model in self.model_list:
             # print(cnt, '/',len(self._model_list), x_test.shape)
             cnt+=1
             # 判断是回归模型还是分类模型
@@ -429,7 +418,7 @@ class voting_model:
         self.shap_accu_list = []
 
         with ThreadPoolExecutor(max_workers=workers) as executor:  # 调整max_workers以适应你的系统
-            futures = [executor.submit(calculate_shap_for_model, model, x_train, x_test, sample_size) for model in self._model_list]
+            futures = [executor.submit(calculate_shap_for_model, model, x_train, x_test, sample_size) for model in self.model_list]
             for future in as_completed(futures):
                 results = future.result()
                 with lock:
@@ -437,15 +426,6 @@ class voting_model:
 
     #----------------------------------------
     # 获取内部参数方法
-
-    def get_base_accu(self):
-        ...
-
-    def get_shap_accu(self):
-        ...
-
-    def get_avg_accu(self):
-        ...
 
 def grid_params_search(param_model_pairs:list):
     '''独立方法，对于每一个模型进行超参数筛选'''
@@ -539,17 +519,8 @@ def sort_nested_list(nested_list, column_index, reverse=False):
         print(f"Error: Column index {column_index} is out of range.")
         return nested_list
 
-def merge_results(reserve_data_size:int, lists:list[list],reserve_accu_ratio=-1) -> list[list]:
+def merge_results(lists:list[list], reserve_model_size=0, reserve_r2_ratio=-sys.float_info.max) -> Tuple[list[list], list]:
     '''数据预处理, reserve_accu_ratio 正确率阈值（可能是r2，或者RMSE等）'''
-    raw_model_size = len(lists)
-    merged_list = merge_multiple_2d_lists_with_labels(lists)
-    # 排序
-    merged_list = sort_nested_list(merged_list, -2, True)
-    # 限制大小
-    if(reserve_accu_ratio <= 0):
-        merged_list = merged_list[:reserve_data_size]
-    # 重组还原
-
     def is_num(value) -> bool:
         if isinstance(value, numbers.Number):
             return not math.isnan(value)
@@ -559,39 +530,43 @@ def merge_results(reserve_data_size:int, lists:list[list],reserve_accu_ratio=-1)
         else:
             return False
     
-    reconstruct_model_list = [[] for _ in range(raw_model_size)]
-    writing_reconst_model_list = [[] for _ in range(raw_model_size)]
+    merged_list = merge_multiple_2d_lists_with_labels(lists)
+    # 排序
+    merged_list = sort_nested_list(merged_list, -2, True)
+    
+    # 重组还原
+    
+    # 确保r2值小于1
+    if(reserve_r2_ratio > 1):
+        raise ValueError("Invalid reserve_r2_ratio")
+    # 确保模型输入数值合法
+    if(reserve_model_size < 0):
+        raise ValueError("Invalid reserve_data_size")
+    # 默认值0 不限制模型大小
+    elif(reserve_model_size == 0):
+        reserve_model_size = len(merged_list)
+
+    reconstruct_model_list = [[] for _ in range(len(lists))] # 结果
+    # 如果通过r2保留的模型列表，其尺寸仍然大于reserve_data_size的限制，则进一步限缩模型大小，但当其取值为0时，表示使用所有模型
+    model_count = 0
     for model in merged_list:
         # 有时，收敛失败导致模型结果异常，需要排除
         if(is_num(model[-2])):
             # 正确性保留阈值
-            if(reserve_accu_ratio > 0 and float(model[-2]) > reserve_accu_ratio):
+            if(model_count < reserve_model_size and float(model[-2]) > reserve_r2_ratio):
                 reconstruct_model_list[model[-1]].append(model[:-2])
-                writing_reconst_model_list[model[-1]].append(model[:-1])
-    # 整体
-    # with open(sys.path[0]+'/output_data'+'.txt', 'w') as file:
-    #         for model in merged_list:
-    #             data_line = '\t'.join(model[:-1])  # 将子列表转换为字符串并用空格分隔
-    #             file.write(data_line + '\n')
-    # sys.exit(0)
+                model_count += 1        # 确保保留的模型尺寸不超过规定的最大模型限制 
     
-    # 分模型
-    # i = 0
-    # for line in writing_reconst_model_list:
-    #     # 将嵌套列表写入文本文件
-    #     with open(sys.path[0]+'/output_'+str(i)+'.txt', 'w') as file:
-    #         for sublist in line:
-    #             data_line = ' '.join(map(str, sublist))  # 将子列表转换为字符串并用空格分隔
-    #             file.write(data_line + '\n')
-    #     i+=1
-
-    return reconstruct_model_list
+    # 展开的结果 
+    cross_results = []
+    for model in merged_list:
+        cross_results.append('\t'.join(model[:-1]))  # 将子列表转换为字符串并用空格分隔
+    
+    return reconstruct_model_list, cross_results
 
 
-def essemble_model_builder_core(x_data:np.ndarray, y_data:np.ndarray, params_list, model_list, reserved_model_size = 0, model_path=None) -> voting_model:
-    '''电池集成模型构建
-
-    '''
+def essemble_model_builder_core(x_data:np.ndarray, y_data:np.ndarray, params_list, model_list, max_reserved_model_size, reserve_r2_threshod) -> Tuple[voting_model, list]:
+    '''电池集成模型构建'''
     def find_best_sing_model(essemble_results:list[list[list]]):
         '''子程序 从各个结果中找到单一模型最优结果'''
         best_result = []
@@ -601,7 +576,7 @@ def essemble_model_builder_core(x_data:np.ndarray, y_data:np.ndarray, params_lis
             else:
                 best_result.append(["Empty"])
         return best_result
-
+    
     def rebuild_models(actual_models) -> list:
         '''子程序：重组模型, 构建模型列表，用于集成模型输入'''
         models = []
@@ -613,55 +588,42 @@ def essemble_model_builder_core(x_data:np.ndarray, y_data:np.ndarray, params_lis
         # actual_models = models
         return models
     
-    if(model_path is None):
-        selected_params_list = []
-        for param_block in range(len(params_list)):
-            model = type(model_list[param_block])()
-            grid_params = grid_param_builder(params_list[param_block])
-            model.fit(x_data, y_data, grid_params)
-            selected_params_list.append(model.get_residual_param().tolist())
-        # 每一种类的模型中最好的模型
-        best_sigle_model_params = find_best_sing_model(selected_params_list)
-        print('\n------------------------------------------\nBest model in each single kinds:')
-        print(best_sigle_model_params)
-        print("--------------------------------------------")
-        # 筛选较好的数据，如果没有规定集成模型大小，则使用所有模型参数
-        if(reserved_model_size == 0):
-            for model_param_list in selected_params_list:
-                reserved_model_size += len(model_param_list)
-        print('Actual essemble model size: %d'%(reserved_model_size))
-        # 模型参数列表，通过交叉验证的优劣排序
-        selected_params_list = merge_results(reserved_model_size, selected_params_list)
-        # with open(sys.path[0]+'/output_data'+'.txt', 'w') as file:
-        #     for sublist in selected_params_list:
-        #         for subsubline in sublist:
-        #             data_line = '\t'.join(subsubline)  # 将子列表转换为字符串并用空格分隔
-        #             file.write(data_line + '\n')
-        actual_models = []
-        for i in range(len(selected_params_list)):
-            actual_models.append(model_list[i].return_full_model(selected_params_list[i]))
-        # 重新合并模型
-        actual_models = rebuild_models(actual_models)
-        # 存储模型
-        with open('model_list.pkl', 'wb') as f:
-            pickle.dump(actual_models, f)
-    else:
-        with open(model_path, 'rb') as f:
-            actual_models = pickle.load(model_path)
+    selected_params_list = []
+    for param_block in range(len(params_list)):
+        model = type(model_list[param_block])()
+        grid_params = grid_param_builder(params_list[param_block])
+        model.fit(x_data, y_data, grid_params)
+        selected_params_list.append(model.get_residual_param().tolist())
+    
+    # 每一种类的模型中最好的模型
+    best_sigle_model_params = find_best_sing_model(selected_params_list)
+    print('\n------------------------------------------\nBest model in each single kinds:')
+    print(best_sigle_model_params)
+    print("--------------------------------------------")
+    
+    # 筛选较好的数据，如果没有规定集成模型大小，则使用所有模型参数(此判断在方法merge_results中进行)
+    # if(max_reserved_model_size == 0):
+    #     for model_param_list in selected_params_list:
+    #         max_reserved_model_size += len(model_param_list)
+    
+    # 模型参数列表，通过交叉验证的优劣排序
+    selected_params_list, cross_results = merge_results(selected_params_list, max_reserved_model_size, reserve_r2_threshod)
+    actual_models = []
+    for i in range(len(selected_params_list)):
+        actual_models.append(model_list[i].return_full_model(selected_params_list[i]))
+    
+    # 重新合并模型
+    actual_models = rebuild_models(actual_models)
+    print('Actual essemble model size: %d, max_reserved_size:%d'%(len(actual_models), max_reserved_model_size))
+    
     # 构建新集成模型
     e_model = voting_model(actual_models)
-    # 集成模型训练
-    # e_model.fit(x_data, y_data)
-    # 返回集成模型
-    return e_model
+    
+    # 返回集成模型(未经训练)
+    return e_model, cross_results
 
-def essemble_builder(x_data: np.ndarray ,y_data: np.ndarray) -> voting_model:
-    # 集成模型尺寸，0代表使用所有模型
-    essemble_model_size = 16
-    essemble_corr_ratio = 0.9   # 模型保留r2
-    essemble_reserve_rate = 0.2  # 模型保留比例
+def essemble_builder(x_data: np.ndarray ,y_data: np.ndarray, max_essemble_submodel_size=0, essemble_r2_reserve_threshod=0.9) -> Tuple[voting_model, list]:
     # 网格参数选择
-    # --------------------------------------------------------------
     mlp_params = mlp_torch_param.copy()
     mlp_params[0] = [x_data.shape[1]]
     mlp_params[4] = [len(set(y_data))]
@@ -682,9 +644,8 @@ def essemble_builder(x_data: np.ndarray ,y_data: np.ndarray) -> voting_model:
     # model_list = [self_svm()]
     # --------------------------------------------------------------
     # 模型构建
-    e_model = essemble_model_builder_core(x_data, y_data, params_list, model_list, reserved_model_size = essemble_model_size)
-    # e_model.fit(x_data, y_data) 
-    return e_model
+    e_model, cross_results = essemble_model_builder_core(x_data, y_data, params_list, model_list, max_essemble_submodel_size, essemble_r2_reserve_threshod)
+    return e_model, cross_results
 
 #------------------------------------------------------------
 # 降维部分
@@ -797,25 +758,21 @@ def onehot_importance_reflection(importance_list, index_list:list, index_maps:di
         onehot_importances[index_maps[index_list[i]]] += importance_list[i]
     return onehot_importances
 
-def feature_choosen():
-    def load_data():
-        '''读取数据，并处理为标准输入形式（iris集形式）'''
-        ...
-        # 读取
-        # 分桶
-        # 重采样
-        x_data, y_data = load_iris_shuffle()
-        return x_data, y_data
-    
-    # 数据生成和预处理部分
-    def generate_onehot_data(n_samples, n_features, n_classes):
-        np.random.seed(42)
-        data = np.random.randint(2, size=(n_samples, n_features))
-        labels = np.random.randint(n_classes, size=n_samples)
-        print(f"原始数据维度: {data.shape}")
-        return data, labels
+def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_dir=os.path.dirname(os.path.abspath(__file__)), dimension_reduction_components=3, reserve_r2_ratio=0.9, max_reserve_model_size=200):
+    def check_and_create_directory(path:str, replacement_dir:str) -> str:
+        directory_path = Path(path)
+        
+        # 检查路径是否已经存在
+        if directory_path.exists():
+            # 如果路径存在，但它不是目录，使用脚本所在目录
+            if not directory_path.is_dir():
+                return replacement_dir
+            return path
+        else:
+            # 如果路径不存在，且路径是一个目录，则创建该目录
+            directory_path.mkdir(parents=True, exist_ok=True)
+            return path
 
-   
     def load_index_map() -> dict:
         '''加载映射回onehot文件的数据'''
         return dict()
@@ -846,29 +803,22 @@ def feature_choosen():
         else:
             raise ValueError("Error Scaler")
     
+    # 构建合法的存储目录
+    models_saving_root_dir = check_and_create_directory(models_saving_root_dir, os.path.dirname(os.path.abspath(__file__)))
+    print('Model Records Storage dir:%s'%(models_saving_root_dir))
     # 降维方式
     reduction_methods = ['pca', 'KernelPCA', 'TruncatedSVD']
     # 不平衡数据处理方式
     imbalance_methods = ['smote', 'borderlinesmote', 'adasyn']
     scaler_methods = ['MinMaxScaler','StandardScaler']
-    # 加载数据
-    n_samples = 42000
-    n_features = 15000
-    n_classes = 24
-    x_data_raw, y_data = generate_onehot_data(n_samples, n_features, n_classes)
-    
-    x_data_raw, y_data = load_data()
-    
     #------------------------------------------------------
-    n_components = 3
     # onehot索引分类
     index_maps = load_index_map()
 
     #  不需要通过此方法降低共线性，因为onehot使得特征正交了
     # x_data, remained_feature_pos = remove_multicollinearity(x_data)
     remained_feature_pos = np.arange(0, len(x_data_raw), 1).tolist()
-    # sys.exit(0)
-    # 数据归一化 
+    # 数据归一化
     for scaler in scaler_methods: 
         std_standarder = get_scaler(scaler)
         x_data = std_standarder.fit_transform(x_data_raw)
@@ -880,24 +830,24 @@ def feature_choosen():
                 print('--------------------------------------------------------------------')
                 print('--------------------------------------------------------------------')
                 print('--------------------------------------------------------------------')
+                 
                 a = time.time()
                 # 降维
-                x_reduced, reducer = dimension_reduction(x_data, reduction_method, n_components)
+                x_reduced, reducer = dimension_reduction(x_data, reduction_method, dimension_reduction_components)
                 # 重采样
                 x_resampled, y_resampled = imbalance_process(x_reduced, y_data, imbalance_method)
                 print(x_resampled.shape, y_resampled.shape)
                 # 切分训练集，验证集
                 x_resampled, x_test, y_resampled, y_test = train_test_split(x_resampled, y_resampled, test_size=0.3, random_state=42)
                 # 构建集成模型
-                e_model = essemble_builder(x_resampled, y_resampled)
-                print('Model fitting...')
+                e_model, cross_results = essemble_builder(x_resampled, y_resampled, max_reserve_model_size, reserve_r2_ratio)
+                # 模型进行训练
+                e_model.fit(x_resampled, y_resampled)
+        
+        
                 #--------------------------------------------------------------------
                 # 以下计算特征重要性代码，不是把把都需要算的，而是在确定好模型后再算
                 # 交叉验证完结果后，进行模型训练
-                
-
-
-                #e_model.fit(x_resampled, y_resampled)
                 #print('Model build finished', time.time()-a, 's')
                 ##--------------------------------------------------------------------
                 #e_model.calculate_perturbation_accuracy(x_test, y_test)
@@ -920,29 +870,230 @@ def feature_choosen():
                 #print('--------------------------------------------------------------------')
                 #print('--------------------------------------------------------------------')
                 ## 重新映射到onehot中
-                
-
-
                 # onehot_importance_per = onehot_importance_reflection(per_importance_list_re, remained_feature_pos, index_maps)
                 # onehot_importance_shap = onehot_importance_reflection(shap_importance_list_re, remained_feature_pos, index_maps)
+                
+        
+        
+        
+                # ---------------------------------------------------------------
+                # 存储模型
+                root_name = models_saving_root_dir + '/' + scaler + '_' + reduction_method+'_'+imbalance_method
+                model_storage_name = root_name+'_model.pkl' 
+                reducer_storage_name = root_name+'_reducer.pkl' 
+                scalar_storage_name = root_name+'_scalar.pkl' 
+                model_params_list_name = root_name+'_model_params_list.txt' 
+                model_basic_info_name = root_name+'_model_basic_info.txt'
+                
+                # 打印模型列表
+                with open(model_params_list_name, 'w') as f:
+                    for line in cross_results:
+                        f.writelines(line+'\n')
+
+                # 存储模型
+                with open(model_storage_name, 'wb') as f:
+                    pickle.dump(e_model, f)
+                
+                # 存储模型相关说明
+                with open(model_basic_info_name, 'w') as f:
+                    f.write('Total Model Numbers: %d\n--------------------------------------\n'%(len(e_model.model_list)))
+                    for model in e_model.model_list:
+                        f.write(str(model)+'\n')
+
+                # 存储放大器
+                with open(reducer_storage_name, 'wb') as f:
+                    pickle.dump(std_standarder, f)
+
+                # 存储降维器
+                with open(scalar_storage_name, 'wb') as f:
+                    pickle.dump(reducer, f)
+                
                 # 清除集成模型中的数据，用于下一轮训练
                 e_model.clear_attribute()
 
-def predict_data():
+def predict_model_1(e_model, e_model_2):
 
     def load_predict_data():
-        ...
+      ...
 
-    x_data, y_data = [],[]
+    def load_sams_data():
+      ...
+
+    x_data, y_data = [], []
+    x_data_2, y_data_2 = [], []
     with open('w', 'rb') as f:
         e_model = pickle.load(f)
     e_model.predict(x_data, y_data)
 
+    # y_data_diff = y_data_2-y_data
+    # e_model_2.predict(x_data_2)
 
-def main():
+    # sum = y_predict_1 + y_predict_2
+
+
+def SAMs_model_builder():
+  def load_data():
+    ...
+    return np.zeros(0), np.zeros(0)
+
+
+  x_data, y_data = load_data()
+
+  # 训练模型2
+
+  # 全尺寸预测
+
+  # 删除过劣点 R达到0.75以上
+
+  # 重构
+
+def build_cell_models():
     '''入口'''
-    feature_choosen()
+    def load_data():
+        '''读取数据，并处理为标准输入形式（iris集形式）'''
+        # 读取
+        # 分桶
+        # 重采样
+        x_data, y_data = load_iris_shuffle()
+        return x_data, y_data
+    
+    # 数据生成和预处理部分
+    def generate_onehot_data(n_samples, n_features, n_classes):
+        np.random.seed(42)
+        data = np.random.randint(2, size=(n_samples, n_features))
+        labels = np.random.randint(n_classes, size=n_samples)
+        print(f"原始数据维度: {data.shape}")
+        return data, labels
+    
+    # 保留模型r2阈值（0.9）
+    reserve_r2_ratio=0.9
+    # 保留模型最大数目，0代表保留所有模型
+    max_reserve_model_size=0
+    
+    # 降维后的维数
+    n_components = 3
+    # 加载数据
+    n_samples = 42000
+    n_features = 15000
+    n_classes = 24
+    x_data, y_data = generate_onehot_data(n_samples, n_features, n_classes)
 
+    # 原始数据 
+    x_data, y_data = load_data()
+    # 结果记录的目录
+    record_dir = os.path.dirname(os.path.abspath(__file__))+'/record_dir'
+    # 构建模型1
+    model_bulder(x_data, y_data, record_dir, n_components, reserve_r2_ratio, max_reserve_model_size)
+
+
+def build_SAMs_model():
+    def load_data():
+        '''读取数据，并处理为标准输入形式（iris集形式）'''
+        # 读取
+        # 分桶
+        # 重采样
+        x_data, y_data = load_iris_shuffle()
+        return x_data, y_data
+    
+    # 数据生成和预处理部分
+    def generate_onehot_data(n_samples, n_features, n_classes):
+        np.random.seed(42)
+        data = np.random.randint(2, size=(n_samples, n_features))
+        labels = np.random.randint(n_classes, size=n_samples)
+        print(f"原始数据维度: {data.shape}")
+        return data, labels
+    
+    # 保留模型r2阈值（0.9）
+    reserve_r2_ratio=0.7
+    # 保留模型最大数目，0代表保留所有模型
+    max_reserve_model_size=0
+    
+    # 降维后的维数
+    n_components = 3
+    # 加载数据
+    n_samples = 42000
+    n_features = 15000
+    n_classes = 24
+    x_data, y_data = generate_onehot_data(n_samples, n_features, n_classes)
+    record_dir = os.path.dirname(os.path.abspath(__file__))+'/record_dir_sams'
+    # 构建SAMs的输入
+    cell_model_path = ''
+    cell_model_scaler = ''
+    cell_model_reducer = ''
+    with open(cell_model_path, 'rb') as f:
+        cell_e_model:voting_model = pickle.load(f)
+    y_predict = cell_e_model.predict(x_data)
+    y_input = y_data-y_predict
+    model_bulder(x_data, y_input, record_dir, n_components, reserve_r2_ratio, max_reserve_model_size)
+
+def model_rating_and_importance_analysis():
+    def load_data():
+        '''读取数据，并处理为标准输入形式（iris集形式）'''
+        # 读取
+        # 分桶
+        # 重采样
+        x_data, y_data = load_iris_shuffle()
+        return x_data, y_data
+
+    # 特征重要性映射回原始特征
+    def map_feature_importance_back(feature_importances:np.ndarray, reducer, method:str) -> np.ndarray:
+        # 确保 feature_importances 是 2 维数组
+        if feature_importances.ndim == 1:
+            feature_importances = feature_importances.reshape(1, -1)
+        if method == 'pca':
+            print("将特征重要性映射回原始特征 (PCA)...")
+            X_recovered = reducer.inverse_transform(feature_importances)
+        elif method == 'KernelPCA':
+            print("将特征重要性映射回原始特征 (KernelPCA)...")
+            X_recovered = reducer.inverse_transform(feature_importances)
+        elif method == 'TruncatedSVD':
+            print("将特征重要性映射回原始特征 (TruncatedSVD)...")
+            X_recovered = reducer.inverse_transform(feature_importances)
+        else:
+            raise ValueError("Unsupported reduction method")
+        return X_recovered
+
+    # 测试数据 
+    x_test, y_test = load_data() 
+    x_resampled = x_test.copy()
+    # 背景数据（用于重要性分析）
+    cell_model_path = ''
+    cell_model_scaler = ''
+    cell_model_reducer = ''
+    
+    # 获取模型
+    with open(cell_model_path, 'rb') as f:
+        e_model:voting_model = pickle.load(f) 
+    # 获取降维器，scalar    
+    with open(cell_model_path, 'rb') as f:
+        scalar = pickle.load(f) 
+    with open(cell_model_path, 'rb') as f:
+        reducer = pickle.load(f) 
+    
+    reduction_method = ''
+
+    # 以下计算特征重要性代码，不是把把都需要算的，而是在确定好模型后再算
+    #--------------------------------------------------------------------
+    e_model.calculate_perturbation_accuracy(x_test, y_test)
+    print('Per built')
+    e_model.calculate_shap_importance(x_resampled[:int(len(x_resampled)/10)], x_test, workers=4)
+    print('SHAP built')
+    # 特征重要性集成，获取平均特征重要性列表
+    # 构建特征重要性            
+    per_importance_list = e_model.regenerate_feature_importance(reducer, e_model.pertuba_accu_list, x_test, y_test, 'soft', reduction_method)
+    shap_importance_list = e_model.regenerate_feature_importance(reducer, e_model.shap_accu_list, x_test, y_test, 'soft', reduction_method)
+    # # 特征重要些还原到原始特征中
+    per_importance_list_re = map_feature_importance_back(per_importance_list, reducer, reduction_method)
+    shap_importance_list_re = map_feature_importance_back(shap_importance_list, reducer, reduction_method)
+    print('特征列表1:')
+    print(per_importance_list_re)
+    print('特征列表2:')
+    print(shap_importance_list_re)
+    # 重新映射到onehot中
+    onehot_importance_per = onehot_importance_reflection(per_importance_list_re, remained_feature_pos, index_maps)
+    onehot_importance_shap = onehot_importance_reflection(shap_importance_list_re, remained_feature_pos, index_maps)
+                
 if __name__ == "__main__":
-    main()
-
+    build_cell_models()
+    build_SAMs_model()
+    model_rating_and_importance_analysis() 

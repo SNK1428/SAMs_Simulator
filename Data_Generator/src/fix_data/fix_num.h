@@ -11,7 +11,6 @@
 #include <unordered_map>
 #include <vector>
 
-std::vector<std::string> replace_invalid_values(const std::vector<std::string> &column, const std::string &replacement_strategy = "mean", double custom_value = 0.0,
-                                                const std::vector<std::string> &delimiters = {"|", ">>", ";"}) noexcept;
+std::vector<std::string> replace_invalid_values(const std::vector<std::string> &column, const std::string &replacement_strategy = "mean", double custom_value = 0.0, const std::vector<std::string> &delimiters = {"|", ">>", ";"}) noexcept;
 
 #endif

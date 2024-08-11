@@ -153,7 +153,7 @@ void preprocess_mole_device_data(std::vector<std::vector<std::string>> &mole_dat
 /**
  * 2024年7月 重构新处理分子指纹方法
  */
-auto build_mole_onehot(std::vector<std::vector<std::string>> &mole_data) -> std::vector<std::vector<std::string>>
+std::vector<std::vector<std::string>> build_mole_onehot(std::vector<std::vector<std::string>> &mole_data)
 {
     // 设备参数
     size_t mole_size = 0;
@@ -177,26 +177,35 @@ auto build_mole_onehot(std::vector<std::vector<std::string>> &mole_data) -> std:
     std::vector<int> results_article(mole_data.size());
     // 开始计算
     size_t ptr = 0;
-    results[0] = split_one_hot_to_vector<double>(mole_data[0][1]);
+    results[0] = convert_to_double_vector(std::vector<std::string>(mole_data[0].begin()+1, mole_data[0].end()));
     results_article[0] = stod(mole_info[0][0]);
     for (size_t i = 1; i < mole_data.size(); i += 1)
+    {
         // 内部更新
         if (mole_info[i][0].compare(mole_info[i - 1][0]) == 0)
-            results[ptr] = vector_add(results[ptr], vector_multiply(split_one_hot_to_vector<double>(mole_data[i][1]), stod(mole_info[i][2]) * 0.01));
+            results[ptr] = vector_add(results[ptr], vector_multiply(convert_to_double_vector(std::vector<std::string>(mole_data[i].begin()+1, mole_data[i].end())), stod(mole_info[i][2]) * 0.01));
+            // results[ptr] = vector_add(results[ptr], vector_multiply(split_one_hot_to_vector<double>(mole_data[i][1]), stod(mole_info[i][2]) * 0.01));
         else // 下一个
         {
             // 初始化下一个组
             ptr += 1;
             results_article[ptr] = stod(mole_info[i][0]);
-            results[ptr] = split_one_hot_to_vector<double>(mole_data[i][1]);
+            results[ptr] = convert_to_double_vector(std::vector<std::string>(mole_data[i].begin()+1, mole_data[i].end()));
             if (mole_info[i].size() == 3)
                 results[ptr] = vector_multiply(results[ptr], stod(mole_info[i][2]) * 0.01);
         }
+        // std::cout << results[ptr].size() << std::endl;
+    }
     results.resize(ptr + 1);
     for (size_t i = 0; i < results.size(); i += 1)
         results[i].insert(results[i].begin(), results_article[i]);
-    // 比较合并后的分子和文章数量是否对的上
-    return convert_vector_to_string(results);
+    
+    // 修正缺失值，非法值
+    auto str_results = convert_vector_to_string(results);
+    str_results = transpose_matrix(str_results); 
+    for(auto &line : str_results)
+        line = replace_invalid_values(line);
+    return transpose_matrix(str_results);
 }
 
 // 筛选分子指纹
@@ -320,11 +329,10 @@ void preprocess(std::vector<std::vector<std::string>> &device_data)
 auto build_datas(std::vector<std::vector<std::string>> &device_data)
 {
     const static std::vector<size_t> maps_constrained_size = Config::get_config_values_vec<size_t>("maps_size");
-    const static std::vector<int> onehot_padding_size = Config::get_config_values_vec<int>("onehot_size");
     const static std::vector<size_t> onehot_block_size = Config::get_config_values_vec<size_t>("block_size");
     const static std::vector<size_t> num_col = Config::get_config_values_vec<size_t>("num_col"); // 数字数据所在列
     const static std::vector<std::vector<size_t>> sequence_col = Config::get_config_matrix<size_t>("sequence_block");
-
+    const static std::vector<int> num_col_sig_col_size = Config::get_config_values_vec<int>("num_col_sig_col_size");
     // 找到了匹配的层，则返回层数，否则返回sequence_col尺寸
     auto which_seq_layer = [](const size_t num) -> size_t {
         for (size_t i = 0; i < sequence_col.size(); i += 1)
@@ -407,13 +415,13 @@ auto build_datas(std::vector<std::vector<std::string>> &device_data)
             std::string map_file_path = Config::get_config_value<std::string>("map_file_root") + "/map_" + std::to_string(i) + ".txt";
             auto results = build_23_raw_results(Config::get_config_value<std::string>("col_23_config_file_path"), device_data[i]);
             // 构建23号maps和 onehot
-            one_hot_data[i] = build_23_maps_and_encode(results, onehot_padding_size[i], map_file_path, Config::get_config_value<size_t>("using_exist_maps") == 0);
+            one_hot_data[i] = build_23_maps_and_encode(results, 0, map_file_path, Config::get_config_value<size_t>("using_exist_maps") == 0);
             decltype(results)().swap(results); // 内存清空
         }
         else if (std::find(num_col.begin(), num_col.end(), i) != num_col.end())
         {
             // 处理数字字符串
-            one_hot_data[i] = convert_2D_string_array<float>(build_num_onehot(device_data[i], 10, 3));
+            one_hot_data[i] = convert_2D_string_array<float>(build_num_onehot(device_data[i], onehot_block_size[i], num_col_sig_col_size[i]));
         }
         else if (i == Config::get_config_value<size_t>("full_structure_col"))
             // 在构建时，跳过第三列，使得其为空串
@@ -422,9 +430,12 @@ auto build_datas(std::vector<std::vector<std::string>> &device_data)
         {
             // 处理普通字符串
             std::string map_path = Config::get_config_value<std::string>("map_file_root") + "/map_" + std::to_string(i) + ".txt";
-            one_hot_data[i] = convert_2D_vector<int, float>(build_str_onehot(device_data[i], map_path, onehot_padding_size[i]));
-            // if(i == 65)
-            // write_content_to_file(device_data[i], PROJECT_PATH "/65_tmp.txt");
+            // if(i == 64)
+            // {
+            //     std::cout << std::endl;
+            //     std::cout << map_path << std::endl;
+            // }
+            one_hot_data[i] = convert_2D_vector<int, float>(build_str_onehot(device_data[i], map_path, onehot_block_size[i]));
         }
         std::string write_file_path = onehot_dir + "/onehot_data_" + std::to_string(i) + ".txt";
         write_content_to_file(one_hot_data[i], write_file_path);
@@ -440,7 +451,7 @@ auto build_datas(std::vector<std::vector<std::string>> &device_data)
     // 因为one_hot_data是一个三维数组，我们需要将其中的元素依次取出，重构成为一个二维数组
     std::vector<size_t> jv_col = Config::get_config_values_vec<size_t>("JV_col");      // JV数据所在列
     std::vector<size_t> sams_col = {one_hot_data.size() - 2, one_hot_data.size() - 1}; // SAMs数据所在列
-    // 寻找特征列的第一列数据
+                                                                                       // 寻找特征列的第一列数据
     size_t first_input_eigen_col = 0;
     for (size_t i = 0; i < one_hot_data.size(); i += 1)
         if (std::find(jv_col.begin(), jv_col.end(), i) == jv_col.end())
@@ -535,7 +546,7 @@ void reconstruct_input_data(std::vector<std::vector<std::string>> &device_data)
     // 去除电极传输层中的相关参数
     for (size_t i = 0; i < m_tl_layer.size(); i += 1)
     {
-        auto split_data = split_str_multi_sep(m_tl_layer[i], delimiter_sets); 
+        auto split_data = split_str_multi_sep(m_tl_layer[i], delimiter_sets);
         if (split_data.size() == 1)
             // 从金属电极里拿信息
             new_m_tl_layer[i] = split_str_multi_sep(m_p_layer[i], delimiter_sets)[0];

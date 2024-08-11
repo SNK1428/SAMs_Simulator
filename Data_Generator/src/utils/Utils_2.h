@@ -259,6 +259,16 @@ long convert_specific_type<long>(const std::string &str);
 template <>
 unsigned long convert_specific_type<unsigned long>(const std::string& str);
 
+
+// 函数：将std::vector<std::string>转换为std::vector<double>
+inline std::vector<double> convert_to_double_vector(const std::vector<std::string>& string_vec) {
+    std::vector<double> double_vec;
+    double_vec.reserve(string_vec.size());
+    for (const std::string& str : string_vec) 
+        double_vec.emplace_back(std::stod(str));
+    return double_vec;
+}
+
 // 函数，将二维std::string数组转换为二维其他类型的数组
     template <typename T>
 std::vector<std::vector<T>> convert_2D_string_array(const std::vector<std::vector<std::string>> &stringArray)

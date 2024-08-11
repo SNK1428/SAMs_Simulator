@@ -51,106 +51,6 @@ from utils import grid_param_builder, load_iris_shuffle, write_content_to_file
 
 from params import *
 
-# ---------------------------------------------------------------------------------
-# 通用pytorch模型训练方法
-def general_torch_model_fit(model: nn.Module, data: torch.Tensor, targets:torch.Tensor, batch_size: int, num_epochs: int, criterion, optimizer: torch.optim.Optimizer, use_cpu: bool = False, validation_split: float = 0.2, early_stop = None) -> nn.Module:
-    """
-    训练模型的方法
-
-    参数:
-    model (nn.Module): 要训练的模型实例
-    data (Union[torch.Tensor, list]): 输入数据
-    targets (Union[torch.Tensor, list]): 目标标签
-    batch_size (int): 批量大小
-    num_epochs (int): 训练轮数
-    criterion (Callable): 损失函数
-    optimizer (torch.optim.Optimizer): 优化器
-    use_cpu (bool): 是否使用CPU进行训练，如果为False且GPU可用，则使用GPU
-    validation_split (float): 验证集比例
-    early_stop (Optional[int]): 早停的阈值（验证损失未改善的最大轮数），如果为None则不使用早停
-    """
-    # 选择设备
-    device = torch.device('cuda' if torch.cuda.is_available() and not use_cpu else 'cpu')
-
-    # 将数据转换为Tensor并移动到指定设备
-    data = data.clone().detach().to(torch.float32).to(device)
-    targets = targets.clone().detach().to(torch.float32).to(device)
-
-    # 切分训练集和验证集
-    train_data, val_data, train_targets, val_targets = train_test_split(data, targets, test_size=validation_split)
-    # print(type(train_data))
-    train_data, train_targets = train_data.to(device), train_targets.to(device)
-    val_data, val_targets = val_data.to(device), val_targets.to(device)
-    # print(type(train_data))
-    # 将模型移动到指定设备
-    model = model.to(device)
-
-    # 训练函数
-    def fit(model: nn.Module, train_data: torch.Tensor, train_targets: torch.Tensor, val_data: torch.Tensor, val_targets: torch.Tensor, criterion, optimizer: torch.optim.Optimizer, num_epochs: int, batch_size: int, early_stop) -> None:
-        """
-        执行模型训练
-
-        参数:
-        model (nn.Module): 要训练的模型
-        train_data (Tensor): 训练数据张量
-        train_targets (Tensor): 训练目标张量
-        val_data (Tensor): 验证数据张量
-        val_targets (Tensor): 验证目标张量
-        criterion (Callable): 损失函数
-        optimizer (torch.optim.Optimizer): 优化器
-        num_epochs (int): 训练轮数
-        batch_size (int): 批量大小
-        early_stop (Optional[int]): 早停的阈值（验证损失未改善的最大轮数），如果为None则不使用早停
-        """
-        model.train()
-        dataset_size = len(train_data)
-        best_val_loss = float('inf')
-        epochs_no_improve = 0
-
-        for epoch in range(num_epochs):
-            # 随机打乱训练数据
-            permutation = torch.randperm(dataset_size)
-            shuffled_data = train_data[permutation]
-            shuffled_targets = train_targets[permutation]
-
-            for i in range(0, dataset_size, batch_size):
-                inputs = shuffled_data[i:i+batch_size]
-                batch_targets = shuffled_targets[i:i+batch_size]
-
-                # 前向传播
-                outputs = model(inputs)
-                loss = criterion(outputs, batch_targets)
-
-                # 反向传播和优化
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-
-            # 验证集上的损失计算
-            model.eval()
-            with torch.no_grad():
-                val_outputs = model(val_data)
-                val_loss = criterion(val_outputs, val_targets)
-            model.train()
-
-            print(f'Epoch {epoch+1}/{num_epochs}, Loss: {loss.item()}, Validation Loss: {val_loss.item()}')
-
-            # 早停机制
-            if early_stop is not None:
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    epochs_no_improve = 0
-                else:
-                    epochs_no_improve += 1
-
-                if epochs_no_improve >= early_stop:
-                    print(f'Early stopping triggered after {epoch+1} epochs.')
-                    break
-    # 训练模型
-    fit(model, train_data, train_targets, val_data, val_targets, criterion, optimizer, num_epochs, batch_size, early_stop)
-    return model
-
-# ---------------------------------------------------------------------------------
 # 数据读取与预处理
 
 
@@ -678,27 +578,29 @@ def dimension_reduction(x_data:np.ndarray, reduction_method:str, n_components=10
         X_reduced, reducer = perform_kernel_pca(x_data, n_components=n_components)
     elif reduction_method == 'TruncatedSVD':
         X_reduced, reducer = perform_truncated_pca(x_data, n_components=n_components)
+    elif reduction_method == 'None':
+        return x_data, None
     else:
         raise ValueError("Unsupported reduction method")
     return X_reduced, reducer
 
 # 类别不平衡处理部分
 def balance_classes_smote(X : np.ndarray, y : np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    print("使用SMOTE处理类别不平衡...")
+    print("SMOTE...")
     smote = SMOTE(random_state=42)
     X_balanced, y_balanced = smote.fit_resample(X, y)
-    print(f"平衡后的类别分布: {np.bincount(y_balanced)}")
+    print(f"Balanced Classes: {np.bincount(y_balanced)}")
     return X_balanced, y_balanced
 
 def balance_classes_borderlinesmote(X, y) -> Tuple[np.ndarray, np.ndarray]:
-    print("使用BorderlineSMOTE处理类别不平衡...")
+    print("BorderlineSMOTE...")
     bsmote = BorderlineSMOTE(random_state=42)
     X_balanced, y_balanced = bsmote.fit_resample(X, y)
     print(f"平衡后的类别分布: {np.bincount(y_balanced)}")
     return X_balanced, y_balanced
 
 def balance_classes_adasyn(X, y) -> Tuple[np.ndarray, np.ndarray]:
-    print("使用ADASYN处理类别不平衡...")
+    print("ADASYN...")
     adasyn = ADASYN(random_state=42)
     try:
         X_balanced, y_balanced = adasyn.fit_resample(X, y)
@@ -758,7 +660,9 @@ def onehot_importance_reflection(importance_list, index_list:list, index_maps:di
         onehot_importances[index_maps[index_list[i]]] += importance_list[i]
     return onehot_importances
 
-def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_dir=os.path.dirname(os.path.abspath(__file__)), dimension_reduction_components=3, reserve_r2_ratio=0.9, max_reserve_model_size=200):
+def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_dir:str,
+                reduction_methods=None, imbalance_methods=None, scaler_methods=None,
+                dimension_reduction_components=3, reserve_r2_ratio=0.9, max_reserve_model_size=200):
     def check_and_create_directory(path:str, replacement_dir:str) -> str:
         directory_path = Path(path)
         
@@ -802,22 +706,19 @@ def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_di
             return StandardScaler()
         else:
             raise ValueError("Error Scaler")
-    
-    # 构建合法的存储目录
-    models_saving_root_dir = check_and_create_directory(models_saving_root_dir, os.path.dirname(os.path.abspath(__file__)))
-    print('Model Records Storage dir:%s'%(models_saving_root_dir))
-    # 降维方式
+   
+    # 降维方式：在外部确定，因为SAMs不需要
     reduction_methods = ['pca', 'KernelPCA', 'TruncatedSVD']
     # 不平衡数据处理方式
     imbalance_methods = ['smote', 'borderlinesmote', 'adasyn']
     scaler_methods = ['MinMaxScaler','StandardScaler']
+ 
+    # 构建合法的存储目录
+    models_saving_root_dir = check_and_create_directory(models_saving_root_dir, os.path.dirname(os.path.abspath(__file__)))
+    print('Model Records Storage dir:%s'%(models_saving_root_dir))
     #------------------------------------------------------
-    # onehot索引分类
-    index_maps = load_index_map()
-
     #  不需要通过此方法降低共线性，因为onehot使得特征正交了
     # x_data, remained_feature_pos = remove_multicollinearity(x_data)
-    remained_feature_pos = np.arange(0, len(x_data_raw), 1).tolist()
     # 数据归一化
     for scaler in scaler_methods: 
         std_standarder = get_scaler(scaler)
@@ -827,13 +728,12 @@ def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_di
         for reduction_method in reduction_methods:
             for imbalance_method in imbalance_methods:
                 print('--------------------------------------------------------------------')
-                print('--------------------------------------------------------------------')
-                print('--------------------------------------------------------------------')
-                print('--------------------------------------------------------------------')
-                 
-                a = time.time()
-                # 降维
-                x_reduced, reducer = dimension_reduction(x_data, reduction_method, dimension_reduction_components)
+                reducer = None
+                #降维
+                if(len(reduction_methods) != 0):
+                    x_reduced, reducer = dimension_reduction(x_data, reduction_method, dimension_reduction_components)
+                else:
+                    x_reduced = x_data
                 # 重采样
                 x_resampled, y_resampled = imbalance_process(x_reduced, y_data, imbalance_method)
                 print(x_resampled.shape, y_resampled.shape)
@@ -844,43 +744,10 @@ def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_di
                 # 模型进行训练
                 e_model.fit(x_resampled, y_resampled)
         
-        
-                #--------------------------------------------------------------------
-                # 以下计算特征重要性代码，不是把把都需要算的，而是在确定好模型后再算
-                # 交叉验证完结果后，进行模型训练
-                #print('Model build finished', time.time()-a, 's')
-                ##--------------------------------------------------------------------
-                #e_model.calculate_perturbation_accuracy(x_test, y_test)
-                #print('Per built')
-                #e_model.calculate_shap_importance(x_resampled[:int(len(x_resampled)/10)], x_test, workers=4)
-                #print('SHAP built')
-                ## 特征重要性集成，获取平均特征重要性列表
-                ## 构建特征重要性            
-                #per_importance_list = e_model.regenerate_feature_importance(reducer, e_model.pertuba_accu_list, x_test, y_test, 'soft', reduction_method)
-                #shap_importance_list = e_model.regenerate_feature_importance(reducer, e_model.shap_accu_list, x_test, y_test, 'soft', reduction_method)
-                ## # 特征重要些还原到原始特征中
-                #per_importance_list_re = map_feature_importance_back(per_importance_list, reducer, reduction_method)
-                #shap_importance_list_re = map_feature_importance_back(shap_importance_list, reducer, reduction_method)
-                #print('特征列表1:')
-                #print(per_importance_list_re)
-                #print('特征列表2:')
-                #print(shap_importance_list_re)
-                #print('--------------------------------------------------------------------')
-                #print('--------------------------------------------------------------------')
-                #print('--------------------------------------------------------------------')
-                #print('--------------------------------------------------------------------')
-                ## 重新映射到onehot中
-                # onehot_importance_per = onehot_importance_reflection(per_importance_list_re, remained_feature_pos, index_maps)
-                # onehot_importance_shap = onehot_importance_reflection(shap_importance_list_re, remained_feature_pos, index_maps)
-                
-        
-        
-        
                 # ---------------------------------------------------------------
                 # 存储模型
                 root_name = models_saving_root_dir + '/' + scaler + '_' + reduction_method+'_'+imbalance_method
                 model_storage_name = root_name+'_model.pkl' 
-                reducer_storage_name = root_name+'_reducer.pkl' 
                 scalar_storage_name = root_name+'_scalar.pkl' 
                 model_params_list_name = root_name+'_model_params_list.txt' 
                 model_basic_info_name = root_name+'_model_basic_info.txt'
@@ -899,53 +766,20 @@ def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_di
                     f.write('Total Model Numbers: %d\n--------------------------------------\n'%(len(e_model.model_list)))
                     for model in e_model.model_list:
                         f.write(str(model)+'\n')
-
+                
                 # 存储放大器
-                with open(reducer_storage_name, 'wb') as f:
+                with open(scalar_storage_name, 'wb') as f:
                     pickle.dump(std_standarder, f)
+                
 
                 # 存储降维器
-                with open(scalar_storage_name, 'wb') as f:
-                    pickle.dump(reducer, f)
+                if(reducer is not None):
+                    reducer_storage_name = root_name+'_reducer.pkl' 
+                    with open(reducer_storage_name, 'wb') as f:
+                        pickle.dump(reducer, f)
                 
                 # 清除集成模型中的数据，用于下一轮训练
                 e_model.clear_attribute()
-
-def predict_model_1(e_model, e_model_2):
-
-    def load_predict_data():
-      ...
-
-    def load_sams_data():
-      ...
-
-    x_data, y_data = [], []
-    x_data_2, y_data_2 = [], []
-    with open('w', 'rb') as f:
-        e_model = pickle.load(f)
-    e_model.predict(x_data, y_data)
-
-    # y_data_diff = y_data_2-y_data
-    # e_model_2.predict(x_data_2)
-
-    # sum = y_predict_1 + y_predict_2
-
-
-def SAMs_model_builder():
-  def load_data():
-    ...
-    return np.zeros(0), np.zeros(0)
-
-
-  x_data, y_data = load_data()
-
-  # 训练模型2
-
-  # 全尺寸预测
-
-  # 删除过劣点 R达到0.75以上
-
-  # 重构
 
 def build_cell_models():
     '''入口'''
@@ -982,6 +816,11 @@ def build_cell_models():
     x_data, y_data = load_data()
     # 结果记录的目录
     record_dir = os.path.dirname(os.path.abspath(__file__))+'/record_dir'
+    # 降维方式：在外部确定，因为SAMs不需要
+    reduction_methods = ['pca', 'KernelPCA', 'TruncatedSVD']
+    # 不平衡数据处理方式
+    imbalance_methods = ['smote', 'borderlinesmote', 'adasyn']
+    scaler_methods = ['MinMaxScaler','StandardScaler']
     # 构建模型1
     model_bulder(x_data, y_data, record_dir, n_components, reserve_r2_ratio, max_reserve_model_size)
 
@@ -1022,11 +861,15 @@ def build_SAMs_model():
     cell_model_reducer = ''
     with open(cell_model_path, 'rb') as f:
         cell_e_model:voting_model = pickle.load(f)
+    # 差减值
     y_predict = cell_e_model.predict(x_data)
     y_input = y_data-y_predict
+    # 模型构建
+    # 多重共线性降维
+    x_data,_ = remove_multicollinearity(x_data)
     model_bulder(x_data, y_input, record_dir, n_components, reserve_r2_ratio, max_reserve_model_size)
 
-def model_rating_and_importance_analysis():
+def model_rating_and_importance_analysis(onehot_reflection_list:None):
     def load_data():
         '''读取数据，并处理为标准输入形式（iris集形式）'''
         # 读取
@@ -1052,6 +895,9 @@ def model_rating_and_importance_analysis():
         else:
             raise ValueError("Unsupported reduction method")
         return X_recovered
+    
+    def get_reducer_type() -> str:
+      ...
 
     # 测试数据 
     x_test, y_test = load_data() 
@@ -1090,9 +936,25 @@ def model_rating_and_importance_analysis():
     print('特征列表2:')
     print(shap_importance_list_re)
     # 重新映射到onehot中
-    onehot_importance_per = onehot_importance_reflection(per_importance_list_re, remained_feature_pos, index_maps)
-    onehot_importance_shap = onehot_importance_reflection(shap_importance_list_re, remained_feature_pos, index_maps)
-                
+    if(onehot_reflection_list is not None):
+        onehot_importance_per = onehot_importance_reflection(per_importance_list_re, onehot_reflection_list, index_maps)
+        onehot_importance_shap = onehot_importance_reflection(shap_importance_list_re, onehot_reflection_list, index_maps)
+
+def best_model_predict(cell_x_data:np.ndarray, cell_model:voting_model, sams_model:voting_model, sams_input_datas:np.ndarray):
+    '''获取可能有最高性能的电池结构，并且与模型拟合，具有较高性能的SAMs进行组合'''
+    y_data = cell_model.predict(cell_x_data)
+    sams_predict_data = sams_model.predict(sams_input_datas)
+    # 获取效率排序
+    result_list = []
+    cnt_1 = 0
+    for line in y_data:
+      cnt_2 = 0
+      for line_1 in sams_predict_data:
+        result_list.append[[cnt_1, cnt_2, line+line_1]]
+        cnt_2+=1
+      cnt_1+=1
+    return result_list
+
 if __name__ == "__main__":
     build_cell_models()
     build_SAMs_model()

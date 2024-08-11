@@ -28,12 +28,15 @@ file(
     "{SOURCE_DIR}/Utils/*.h"
 )
 
-add_executable(Onehot_Generator ${SRC_FILES} main.cc)
-add_executable(Predictor ${UTILS_FILES} data_generator.cc)
+set(MAIN_EXECUTABLE_NAME Onehot_Generator) 
+set(PREDICT_EXECUTABLE_NAME Predictor)
+
+add_executable(${MAIN_EXECUTABLE_NAME} ${SRC_FILES} main.cc)
+add_executable(${PREDICT_EXECUTABLE_NAME}  ${UTILS_FILES} data_generator.cc)
 
 # 禁用所有报警(gcc)
-TARGET_COMPILE_OPTIONS(${PROJECT_NAME} PUBLIC -w)
-
+TARGET_COMPILE_OPTIONS(${MAIN_EXECUTABLE_NAME} PUBLIC -w)
+TARGET_COMPILE_OPTIONS(${PREDICT_EXECUTABLE_NAME} PUBLIC -w)
 # 设置编译选项
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fopenmp -Wall -Wextra")

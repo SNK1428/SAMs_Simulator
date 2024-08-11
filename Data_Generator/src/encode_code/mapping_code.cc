@@ -97,10 +97,12 @@ std::vector<std::vector<int>> build_str_onehot(const std::vector<std::string> &i
 
     // 用于映射的maps
     std::unordered_map<std::string, int> mapping = load_mapping(map_path);
+    // std::cout << mapping.size() << std::endl;
     // 按block切分数据
     std::vector<std::vector<std::string>> splited_vec = split_2d_vec(input_strings);
     // 构建实际block尺寸
     size_t actual_block_size = constraint_block_size;
+    // std::cout <<"\nBlock_size: "<< constraint_block_size<< std::endl;
     if(constraint_block_size == 0)
         for(auto &line : splited_vec)
             if(line.size() > actual_block_size)
@@ -108,6 +110,7 @@ std::vector<std::vector<int>> build_str_onehot(const std::vector<std::string> &i
     // 固定尺寸决定于 1. maps大小 2. 定义的最大block尺寸
     if(actual_block_size > std::numeric_limits<size_t>::max() / mapping.size())
         throw std::runtime_error("Num overflow in method build_str_onehot");
+    // std::cout << actual_block_size << std::endl;
     std::vector<std::vector<int>> onehot_code(splited_vec.size(), std::vector<int>(actual_block_size * mapping.size()));
     std::vector<std::string> parallel_groups;
     int index;

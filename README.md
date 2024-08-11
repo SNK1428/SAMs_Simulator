@@ -39,7 +39,7 @@ shap 0.42.1
 ## 使用方法
 
 1. 数据预处理+独热编码
-  Data_Generator/build/Onehot_Generator
+  Data_Generator/build/Onehot_Generator（编码后）
   数据预处理器Eigen_build
 
 1. 特征过滤，模型筛选，集成模型训练

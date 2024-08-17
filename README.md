@@ -46,6 +46,6 @@ shap 0.42.1
 
 1. 数据生成与预测
   数据生成
-  Data_Generator/build/Predictor 
+  Data_Generator/build/Predictor
   数据预测
   Fitting_model/essemble_model.py

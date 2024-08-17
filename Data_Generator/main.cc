@@ -588,7 +588,7 @@ std::string get_config_file_path(int argc,  char * argv[])
 }
 
 // 配置文件位置（核心初始化参数）
-std::string config_file_path = PROJECT_PATH "/config.txt";
+const std::string config_file_path = PROJECT_PATH "/config.txt";
 
 int main(int argc, char *argv[])
 {

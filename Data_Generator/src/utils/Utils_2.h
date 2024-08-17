@@ -2,6 +2,11 @@
 #define Utils_2_H
 
 #include "../include/IMPORT_LIB.h"
+#include <algorithm>
+#include <cstddef>
+#include <vector>
+
+bool is_double(const std::string& str);
 
 // 判断配置文件路径
 std::string get_config_file_path(int argc,  char * argv[]);
@@ -11,15 +16,15 @@ template <typename T>
 std::vector<T> random_vec_generator(size_t length, T min_value, T max_value) {
     static_assert(std::is_integral<T>::value, "T must be an integral type");            // static_assert is a check happend in compile stage
     assert(min_value <= max_value);
-    assert(length != 0); 
-    
+    assert(length != 0);
+
     std::random_device rd; // Hardware random number generator
     std::uniform_int_distribution<T> distrib(min_value, max_value);
 
     std::vector<T> series;
     series.reserve(length); // Reserve memory to avoid reallocations
 
-    for (size_t i = 0; i < length; ++i) 
+    for (size_t i = 0; i < length; ++i)
         series.emplace_back(distrib(rd)); // Generate and store random number
 
     return series;
@@ -286,7 +291,7 @@ unsigned long convert_specific_type<unsigned long>(const std::string& str);
 inline std::vector<double> convert_to_double_vector(const std::vector<std::string>& string_vec) {
     std::vector<double> double_vec;
     double_vec.reserve(string_vec.size());
-    for (const std::string& str : string_vec) 
+    for (const std::string& str : string_vec)
         double_vec.emplace_back(std::stod(str));
     return double_vec;
 }
@@ -466,24 +471,25 @@ void remove_element_by_index(std::vector<T> &vec, size_t index)
     }
 }
 
-// 新的转置矩阵的方法（2024年7月）
+// 新的转置矩阵的方法（创建新矩阵）
     template <typename T>
 std::vector<std::vector<T>> new_transpose_matrix(const std::vector<std::vector<T>> &vec)
 {
+    // Assert that the input vector is not empty (for debugging purposes)
+    assert(!vec.empty() && "Input vector should not be empty");
+
     // Determine the maximum row size (number of columns in the transposed matrix)
     size_t max_col_size = 0;
-    for (const auto &row : vec)
+    for (const auto &row : vec) 
         max_col_size = std::max(max_col_size, row.size());
 
-    // 初始化转置矩阵并分配好内存
-    std::vector<std::vector<T>> transposed(max_col_size);
-    for (auto &row : transposed)
-        row.reserve(vec.size());
+    std::vector<std::vector<T>> transposed(max_col_size, std::vector<T>(vec.size()));
 
-    // 填充转置矩阵
-    for (size_t i = 0; i < vec.size(); ++i)
-        for (size_t j = 0; j < vec[i].size(); ++j)
-            transposed[j].emplace_back(vec[i][j]);
+    // Fill the transposed matrix
+    for(size_t i = 0; i < vec.size(); i+=1)
+        for(size_t j = 0; j < vec[i].size(); j+=1)
+            transposed[j][i] = vec[i][j];
+
     return transposed;
 }
 

@@ -18,7 +18,6 @@ file(
     GLOB_RECURSE SRC_FILES
     "${SOURCE_DIR}/*.cpp"
     "${SOURCE_DIR}/*.cc"
-    "${SOURCE_DIR}/*.h"
 )
 
 set(MAIN_EXECUTABLE_NAME Onehot_Generator) 

@@ -1,5 +1,15 @@
 #include "Utils_2.h"
 
+bool is_double(const std::string& str) {
+    if (str.empty()) return false;
+
+    char* end;
+    std::strtod(str.c_str(), &end);
+
+    // Return true if the entire string was successfully converted
+    return end != str.c_str() && *end == '\0';
+}
+
 // 判断配置文件路径
 std::string get_config_file_path(int argc,  char * argv[])
 {
@@ -11,9 +21,6 @@ std::string get_config_file_path(int argc,  char * argv[])
     }
     return std::string("config.txt");
 }
-
-
-
 
 template <>
 int stringToType<int>(const std::string &str)

@@ -1,6 +1,4 @@
-#include "src/include/MACRO.h"
 #include "src/utils/Utils_2.h"
-
 #include "src/encode_code/mapping_code.h"
 #include "src/encode_code/num_encode.h"
 #include "src/encode_code/regex_23.h"
@@ -9,9 +7,13 @@
 #include "src/fix_data/fix_years.h"
 #include "src/read_params/Config.h"
 #include "src/include/IMPORT_LIB.h"
+#include "src/include/MACRO.h"
+#include <cstddef>
+#include <string>
+#include <vector>
 
 // 原始数据中存在大量不合理的JV数据，进行补全过滤，保证输入模型的数据中，Jsc*Voc*FF=PCE
-void device_jv_check(std::vector<std::vector<std::string>>& device_data)
+std::vector<std::vector<std::string>> device_jv_check(std::vector<std::vector<std::string>>& device_data)
 {
     const auto pce_range = Config::get_config_values_vec<size_t>("PCE_range");
     const auto ff_range =  Config::get_config_values_vec<size_t>("FF_range");
@@ -19,101 +21,75 @@ void device_jv_check(std::vector<std::vector<std::string>>& device_data)
     const auto voc_range = Config::get_config_values_vec<size_t>("Voc_range");
     const auto jv_col = Config::get_config_values_vec<size_t>("JV_col");
 
-    auto statistic_data = [](const std::vector<std::string>::iterator &begin, const std::vector<std::string>::iterator& end) -> size_t
+    auto fulfill_data = [](std::vector<std::string>& target_line, const std::vector<std::string>& ref_line) -> void
     {
-        auto it = begin;
-        size_t cnt = 0;
-        while (it != end)
-        {
-            if(it->compare("") == 0)
-                cnt+=1;
-            it++;
-        }
-        return cnt;
+        // Ensure the vectors are of the same size
+        assert(target_line.size() == ref_line.size() && "Vectors must be of the same size");
+
+        for (size_t i = 0; i < target_line.size(); ++i) 
+            if (!is_double(target_line[i])) 
+                target_line[i] = ref_line[i];
     };
 
-
-    auto is_valid_data = [](const size_t cnt, const std::vector<std::string>::iterator & data_begin, const std::vector<std::string>::iterator &data_end,
-            const std::vector<std::string>::iterator &ref_data_begin, const std::vector<std::string>::iterator &ref_data_end) -> bool
+    auto calculate_sig_data = []()
     {
-        // 修正JV数据
-        if(cnt == 4)
-        {
-            // 4项数据完整
-        }
-        else if (cnt == 3)
-        {
-            // 3项数据完整
-        }
-        else
-        {
-            // 其他情况：使用平均值补全，再进行检查，如能通过检查，则仍然为合理数据
-        }
+
+    };
+    
+    auto check_level = []() -> int
+    {
+        return 0;
     };
 
-    auto global_copy = [](const bool first, const bool second, std::vector<std::string>::iterator data_begin) -> void
+    auto check_rational = []() -> bool
     {
-        auto first_begin = data_begin;
-        auto second_begin = data_begin;
-        if(first && second)
-            return;
-        else if (first)
-        {
-            first_begin = data_begin;
-            second_begin = data_begin+4;
-        }
-        else
-        {
-            first_begin = data_begin;
-            second_begin = data_begin+4;
-
-        }
-        for(size_t i = 0; i < 4; i+=1)
-            *first_begin = *second_begin;
+        return false;
     };
 
-    auto check_rational = [](const std::vector<std::string>::iterator& begin) -> bool
-    {
-        auto first_begin = begin;
-        auto second_begin = begin+4;
-        if(stod(*first_begin)* stod(*(first_begin+1))*stod(*(first_begin+2)) == stod(*(first_begin+3)))
-            ;
-
-        return true;
-    };
-
-    auto fixed_device_data = device_data;
-    std::vector<std::vector<std::string>> return_results = std::remove_reference<decltype(device_data)>::type();
-    return_results.reserve(device_data.size());
+    device_data = new_transpose_matrix(device_data);
+    std::vector<std::vector<std::string>> fixed_device_data(device_data.begin()+51, device_data.begin()+58);
+    for(size_t i = 0; i < fixed_device_data.size(); i+=1)
+        fixed_device_data[i] = replace_invalid_values(fixed_device_data[i]);
+    device_data = new_transpose_matrix(device_data);
+    fixed_device_data = new_transpose_matrix(fixed_device_data);
+    std::vector<std::vector<std::string>> results;
+    results.reserve(fixed_device_data.size());
     size_t count = 0;
     bool is_reserved = false;
     bool first_is_lost = false;
     bool second_is_lost = false;
+
+    // 遍历数据
     for(size_t i = 0; i < device_data.size(); i+=1)
     {
-        auto line = device_data[i];
-        auto ref_line = fixed_device_data[i];
-        size_t first_cnt = statistic_data(line.begin(), line.begin()+4);
-        size_t second_cnt = statistic_data(line.begin()+4, line.end());
-        // 修正JV数据
-        bool is_valid_first = is_valid_data(first_cnt, line.begin(), line.begin()+4, ref_line.begin() , ref_line.begin()+4);
-        bool is_valid_second = is_valid_data(second_cnt, line.begin()+4, line.end(), ref_line.begin()+4 , ref_line.end());
-        if(!is_valid_first && !is_valid_second)
-            continue;
-        global_copy(is_valid_first, is_valid_second, line.begin());
-        // 四项范围检查
-        // JV合理性检查
-        bool first_ratio = check_rational(line.begin());
-        bool second_ratio = check_rational(line.begin()+4);
-
-        if(first_ratio || second_ratio)
+        // 建立原始数据切片
+        //检查等级
+        int level = check_level();
+        if(level == 4)
         {
-            return_results.emplace_back(line);
-            count+=1;
+            // 判断是否合理，如何合理则保留
+            if(check_rational())
+            {
+        
+            }
         }
-
+        else if (level == 3)
+        {
+            // 计算缺失项，作为合理数据
+            calculate_sig_data();       
+        }
+        else if (level == 2)
+        {
+            // 使用对应平均值补全缺失项
+            // 检查合理性
+            if(check_rational())
+            {
+                
+            }
+        }
     }
-    return_results.reserve(count);
+    results.shrink_to_fit();
+    return results;
 }
 
 
@@ -176,7 +152,7 @@ std::vector<std::vector<std::string>> build_mole_onehot(std::vector<std::vector<
         // 内部更新
         if (mole_info[i][0].compare(mole_info[i - 1][0]) == 0)
             results[ptr] = vector_add(results[ptr], vector_multiply(convert_to_double_vector(std::vector<std::string>(mole_data[i].begin()+1, mole_data[i].end())), stod(mole_info[i][2]) * 0.01));
-            // results[ptr] = vector_add(results[ptr], vector_multiply(split_one_hot_to_vector<double>(mole_data[i][1]), stod(mole_info[i][2]) * 0.01));
+        // results[ptr] = vector_add(results[ptr], vector_multiply(split_one_hot_to_vector<double>(mole_data[i][1]), stod(mole_info[i][2]) * 0.01));
         else // 下一个
         {
             // 初始化下一个组
@@ -191,10 +167,10 @@ std::vector<std::vector<std::string>> build_mole_onehot(std::vector<std::vector<
     results.resize(ptr + 1);
     for (size_t i = 0; i < results.size(); i += 1)
         results[i].insert(results[i].begin(), results_article[i]);
-    
+
     // 修正缺失值，非法值
     auto str_results = convert_vector_to_string(results);
-    str_results = transpose_matrix(str_results); 
+    str_results = transpose_matrix(str_results);
     for(auto &line : str_results)
         line = replace_invalid_values(line);
     return transpose_matrix(str_results);

@@ -3,6 +3,28 @@
 
 #include "../include/IMPORT_LIB.h"
 
+// 判断配置文件路径
+std::string get_config_file_path(int argc,  char * argv[]);
+
+// Templated function to generate and return a random series
+template <typename T>
+std::vector<T> random_vec_generator(size_t length, T min_value, T max_value) {
+    static_assert(std::is_integral<T>::value, "T must be an integral type");            // static_assert is a check happend in compile stage
+    assert(min_value <= max_value);
+    assert(length != 0); 
+    
+    std::random_device rd; // Hardware random number generator
+    std::uniform_int_distribution<T> distrib(min_value, max_value);
+
+    std::vector<T> series;
+    series.reserve(length); // Reserve memory to avoid reallocations
+
+    for (size_t i = 0; i < length; ++i) 
+        series.emplace_back(distrib(rd)); // Generate and store random number
+
+    return series;
+}
+
 // trim from start (in place)
 inline void ltrim(std::string &s)
 {

@@ -9,14 +9,6 @@
 #include "src/fix_data/fix_years.h"
 #include "src/read_params/Config.h"
 #include "src/include/IMPORT_LIB.h"
-#include <cstddef>
-#include <cstdlib>
-#include <exception>
-#include <iostream>
-#include <string>
-#include <type_traits>
-#include <vector>
-#include <filesystem> // C++17及以上
 
 // 原始数据中存在大量不合理的JV数据，进行补全过滤，保证输入模型的数据中，Jsc*Voc*FF=PCE
 void device_jv_check(std::vector<std::vector<std::string>>& device_data)
@@ -572,19 +564,6 @@ void reconstruct_input_data(std::vector<std::vector<std::string>> &device_data)
     device_data.emplace_back(new_m_tl_layer);
     // 矩阵转置回来
     device_data = transpose_matrix(device_data);
-}
-
-
-// 判断配置文件路径
-std::string get_config_file_path(int argc,  char * argv[])
-{
-    if (argc > 1)
-    {
-        std::string config_file_path_str = std::string(argv[1]);
-        if(std::filesystem::exists(config_file_path_str))
-            return config_file_path_str;
-    }
-    return std::string("config.txt");
 }
 
 // 配置文件位置（核心初始化参数）

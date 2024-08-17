@@ -1,5 +1,19 @@
 #include "Utils_2.h"
-#include <string>
+
+// 判断配置文件路径
+std::string get_config_file_path(int argc,  char * argv[])
+{
+    if (argc > 1)
+    {
+        std::string config_file_path_str = std::string(argv[1]);
+        if(std::filesystem::exists(config_file_path_str))
+            return config_file_path_str;
+    }
+    return std::string("config.txt");
+}
+
+
+
 
 template <>
 int stringToType<int>(const std::string &str)

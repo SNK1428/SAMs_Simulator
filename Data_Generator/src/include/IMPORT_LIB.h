@@ -2,6 +2,7 @@
 #define IMPORT_LIB_
 #include <algorithm>
 #include <cassert>
+#include <string>
 #include <chrono>
 #include <climits>
 #include <cmath>
@@ -38,6 +39,15 @@
 #include <iostream>
 #include <string>
 #include <type_traits>
+#include <cstddef>
+#include <cstdlib>
+#include <exception>
+#include <iostream>
+#include <string>
+#include <type_traits>
+#include <vector>
+#include <filesystem> // C++17及以上
+#include <random>
 #include <vector>
 #if defined(_WIN32) || defined(_WIN64)
 #include <windows.h>

@@ -11,29 +11,14 @@
 #include <vector>
 #include <random>
 
-std::string config_file_path = PROJECT_PATH "/config.txt";
+std::string config_file_path_tmp = PROJECT_PATH "/config.txt";
 
-// Templated function to generate and return a random series
-template <typename T>
-std::vector<T> random_vec_generator(size_t length, T min_value, T max_value) {
-    static_assert(std::is_integral<T>::value, "T must be an integral type");            // static_assert is a check happend in compile stage
-    assert(min_value <= max_value);
-    assert(length != 0); 
-    
-    std::random_device rd; // Hardware random number generator
-    std::uniform_int_distribution<T> distrib(min_value, max_value);
-
-    std::vector<T> series;
-    series.reserve(length); // Reserve memory to avoid reallocations
-
-    for (size_t i = 0; i < length; ++i) 
-        series.emplace_back(distrib(rd)); // Generate and store random number
-
-    return series;
-}
-
-int main()
+int main(int argc, char *argv[])
 {
+
+    std::string config_file_path = get_config_file_path(argc, argv);
+    config_file_path = config_file_path_tmp;
+    
     size_t generate_size = 1000000;
     size_t min_index;
     size_t max_index;

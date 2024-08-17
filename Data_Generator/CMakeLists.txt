@@ -26,7 +26,7 @@ set(PREDICT_EXECUTABLE_NAME Predictor)
 
 add_executable(${MAIN_EXECUTABLE_NAME} ${SRC_FILES} main.cc)
 # add_executable(${PREDICT_EXECUTABLE_NAME} ${SRC_FILES} data_generator.cc)
-add_executable(${PREDICT_EXECUTABLE_NAME} ${SOURCE_DIR}/utils/utils_2.cc ${SOURCE_DIR}/read_params/Config.cc ${SOURCE_DIR}/include/IMPORT_LIB.h data_generator.cc)
+add_executable(${PREDICT_EXECUTABLE_NAME} ${SOURCE_DIR}/utils/utils_2.cc ${SOURCE_DIR}/read_params/Config.cc data_generator.cc)
 
 # 禁用所有报警(gcc)
 TARGET_COMPILE_OPTIONS(${MAIN_EXECUTABLE_NAME} PUBLIC -w)

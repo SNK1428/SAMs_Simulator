@@ -13,7 +13,7 @@
 #include <vector>
 
 // 原始数据中存在大量不合理的JV数据，进行补全过滤，保证输入模型的数据中，Jsc*Voc*FF=PCE
-std::vector<std::vector<std::string>> device_jv_check(std::vector<std::vector<std::string>>& device_data)
+void device_jv_check(std::vector<std::vector<std::string>>& device_data)
 {
     const auto pce_range = Config::get_config_values_vec<size_t>("PCE_range");
     const auto ff_range =  Config::get_config_values_vec<size_t>("FF_range");
@@ -21,78 +21,114 @@ std::vector<std::vector<std::string>> device_jv_check(std::vector<std::vector<st
     const auto voc_range = Config::get_config_values_vec<size_t>("Voc_range");
     const auto jv_col = Config::get_config_values_vec<size_t>("JV_col");
 
-    auto fulfill_data = [](std::vector<std::string>& target_line, const std::vector<std::string>& ref_line) -> void
+    auto fix_sing_data_2 = [](std::vector<std::string>& target_line, const std::vector<std::string>& ref_line) -> void
     {
         // Ensure the vectors are of the same size
         assert(target_line.size() == ref_line.size() && "Vectors must be of the same size");
 
-        for (size_t i = 0; i < target_line.size(); ++i) 
-            if (!is_double(target_line[i])) 
+        for (size_t i = 0; i < target_line.size(); ++i)
+            if (!is_double(target_line[i]))
                 target_line[i] = ref_line[i];
     };
 
-    auto calculate_sig_data = []()
+    auto fix_sing_data = [](std::vector<std::string>& jv_line) -> void
     {
-
+        size_t missing_pos = 5;
+        for(size_t i = 0; i < jv_line.size(); i+=1)
+            if(jv_line[i].compare("") == 0)
+            {
+                missing_pos = i;
+                break;
+            }
+        if(missing_pos == 0)
+            jv_line[missing_pos] = std::to_string(stod(jv_line[3])/stod(jv_line[2])/stod(jv_line[1]));
+        else if (missing_pos == 1)
+            jv_line[missing_pos] = std::to_string(stod(jv_line[3])/stod(jv_line[2])/stod(jv_line[0]));
+        else if (missing_pos == 2)
+            jv_line[missing_pos] = std::to_string(stod(jv_line[3])/stod(jv_line[1])/stod(jv_line[0]));
+        else if(missing_pos == 3)
+            jv_line[missing_pos] = std::to_string(stod(jv_line[0])*stod(jv_line[1])*stod(jv_line[2]));
+        else
+            throw std::runtime_error("Invalid missing_pos");
     };
-    
-    auto check_level = []() -> int
+
+    auto check_level = [](const std::vector<std::string>& data_line) -> int
     {
-        return 0;
+        int cnt = 0;
+        for(auto ele : data_line)
+            if(is_double(ele))
+                cnt+=1;
+        return cnt;
     };
 
-    auto check_rational = []() -> bool
+    auto check_rational = [](const std::vector<std::string>& jv_data_line, double endurance_ratio = 0.05) -> bool
     {
+        if(std::abs(std::stod(jv_data_line[0])*std::stod(jv_data_line[1])*std::stod(jv_data_line[2]) - std::stod(jv_data_line[3])
+                    /std::stod(jv_data_line[3])) < endurance_ratio)
+            return true;
         return false;
     };
 
     device_data = new_transpose_matrix(device_data);
-    std::vector<std::vector<std::string>> fixed_device_data(device_data.begin()+51, device_data.begin()+58);
-    for(size_t i = 0; i < fixed_device_data.size(); i+=1)
-        fixed_device_data[i] = replace_invalid_values(fixed_device_data[i]);
+    std::vector<std::vector<std::string>> fixed_jv_data(device_data.begin()+51, device_data.begin()+58);
+    auto raw_jv_data = fixed_jv_data;
+    for(size_t i = 0; i < fixed_jv_data.size(); i+=1)
+        fixed_jv_data[i] = replace_invalid_values(fixed_jv_data[i]);
     device_data = new_transpose_matrix(device_data);
-    fixed_device_data = new_transpose_matrix(fixed_device_data);
+    fixed_jv_data = new_transpose_matrix(fixed_jv_data);
+    raw_jv_data = new_transpose_matrix(raw_jv_data);
     std::vector<std::vector<std::string>> results;
-    results.reserve(fixed_device_data.size());
-    size_t count = 0;
-    bool is_reserved = false;
-    bool first_is_lost = false;
-    bool second_is_lost = false;
+    results.reserve(fixed_jv_data.size());
 
+
+    // 判断JV数据是否合理
+    std::vector<bool> valid_data(device_data.size(), false);
     // 遍历数据
     for(size_t i = 0; i < device_data.size(); i+=1)
     {
-        // 建立原始数据切片
-        //检查等级
-        int level = check_level();
+        //检查处理方式
+        int level = check_level(raw_jv_data[i]);
+        // 剩余4个有效数据
         if(level == 4)
         {
             // 判断是否合理，如何合理则保留
-            if(check_rational())
-            {
-        
-            }
-        }
+            if(check_rational(raw_jv_data[i]))
+                valid_data[i] =  true;
+            ;}
+        // 剩余3个有效数据
         else if (level == 3)
         {
             // 计算缺失项，作为合理数据
-            calculate_sig_data();       
+            fix_sing_data(raw_jv_data[i]);
+            valid_data[i] = true;
         }
-        else if (level == 2)
+        else
         {
             // 使用对应平均值补全缺失项
+            fix_sing_data_2(raw_jv_data[i], fixed_jv_data[i]);
             // 检查合理性
-            if(check_rational())
-            {
-                
-            }
+            if(check_rational(raw_jv_data[i]))
+                valid_data[i] = true;
         }
     }
-    results.shrink_to_fit();
-    return results;
+    auto JV_col_data = Config::get_config_values_vec<size_t>("JV_col");
+    auto PCE_range = Config::get_config_values_vec<double>("PCE_range");
+    auto FF_range = Config::get_config_values_vec<double>("FF_range");
+    auto Isc_range = Config::get_config_values_vec<double>("Isc_range");
+    auto Voc_range = Config::get_config_values_vec<double>("Voc_range");
+
+    std::vector<double> JV_avg_data(JV_col_data.size() / 2);
+    // 限制JV范围
+    for(size_t i = 0; i < device_data.size(); i+=1)
+    {
+        for (size_t i = 0; i < JV_avg_data.size(); i += 1)
+            JV_avg_data[i] = (stod(merge_data[i][JV_col_data[i]]) + stod(merge_data[i][JV_col_data[i] + JV_avg_data.size()])) / 2;
+        if (JV_avg_data[0] > Voc_range[0] && JV_avg_data[0] < Voc_range[1] && JV_avg_data[1] > Isc_range[0] && JV_avg_data[1] < Isc_range[1] && JV_avg_data[2] > FF_range[0] &&
+                JV_avg_data[2] < FF_range[1] && JV_avg_data[3] > PCE_range[0] && JV_avg_data[3] < PCE_range[1])
+            results.emplace_back(device_data[i]);
+    }
+    device_data = results;
 }
-
-
 
 void preprocess_device_data(std::vector<std::vector<std::string>> &device_data)
 {
@@ -193,6 +229,7 @@ void precheck_mole_data(std::vector<std::vector<std::string>> &mole_onehot_data,
     auto Isc_range = Config::get_config_values_vec<double>("Isc_range");
     auto Voc_range = Config::get_config_values_vec<double>("Voc_range");
     std::vector<double> JV_avg_data(JV_col_data.size() / 2);
+    // 检查JV范围
     for (size_t i = 0; i < merge_data.size(); i += 1)
     {
         for (size_t i = 0; i < JV_avg_data.size(); i += 1)
@@ -582,8 +619,8 @@ int main(int argc, char *argv[])
         available_contents.assign(available_contents.begin() + 1, available_contents.end());
         // 预处理数据
         preprocess_device_data(available_contents);
-        // 限制JV范围
-        // device_jv_check(available_contents);
+        // 检查JV合理性
+        device_jv_check(available_contents);
         // 修正缺失值
         preprocess(available_contents);
     }
@@ -591,8 +628,6 @@ int main(int argc, char *argv[])
         throw std::runtime_error("Device_data invalid value: " + Config::get_config_value<std::string>("device_data") + "(Only support 0 or 1)");
     // 重构矩阵，将用于SAMs模型输入的两列分离出来
     reconstruct_input_data(available_contents);
-    // write_content_to_file(available_contents, PROJECT_PATH "/tmp.txt");
-    // exit(0);
     std::cout << "Initialized finished" << std::endl;
     // 转置，便于后续处理 进入主循环，构建map和编码
     available_contents = transpose_matrix(available_contents);

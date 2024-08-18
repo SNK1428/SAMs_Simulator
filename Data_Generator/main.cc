@@ -79,6 +79,14 @@ void device_jv_check(std::vector<std::vector<std::string>>& device_data)
     raw_jv_data = new_transpose_matrix(raw_jv_data);
     std::vector<std::vector<std::string>> results;
     results.reserve(fixed_jv_data.size());
+    auto JV_col_data = Config::get_config_values_vec<size_t>("JV_col");
+    auto PCE_range = Config::get_config_values_vec<double>("PCE_range");
+    auto FF_range = Config::get_config_values_vec<double>("FF_range");
+    auto Isc_range = Config::get_config_values_vec<double>("Isc_range");
+    auto Voc_range = Config::get_config_values_vec<double>("Voc_range");
+    auto jv_accuracy = Config::get_config_value<double>("jv_accuracy");
+
+    // 正反扫数据统一
 
 
     // 判断JV数据是否合理
@@ -91,10 +99,10 @@ void device_jv_check(std::vector<std::vector<std::string>>& device_data)
         // 剩余4个有效数据
         if(level == 4)
         {
-            // 判断是否合理，如何合理则保留
-            if(check_rational(raw_jv_data[i]))
+            // 判断组合是否合理，如何合理则保留
+            if(check_rational(raw_jv_data[i], jv_accuracy))
                 valid_data[i] =  true;
-            ;}
+        }
         // 剩余3个有效数据
         else if (level == 3)
         {
@@ -107,25 +115,24 @@ void device_jv_check(std::vector<std::vector<std::string>>& device_data)
             // 使用对应平均值补全缺失项
             fix_sing_data_2(raw_jv_data[i], fixed_jv_data[i]);
             // 检查合理性
-            if(check_rational(raw_jv_data[i]))
+            if(check_rational(raw_jv_data[i], jv_accuracy))
                 valid_data[i] = true;
         }
     }
-    auto JV_col_data = Config::get_config_values_vec<size_t>("JV_col");
-    auto PCE_range = Config::get_config_values_vec<double>("PCE_range");
-    auto FF_range = Config::get_config_values_vec<double>("FF_range");
-    auto Isc_range = Config::get_config_values_vec<double>("Isc_range");
-    auto Voc_range = Config::get_config_values_vec<double>("Voc_range");
 
     std::vector<double> JV_avg_data(JV_col_data.size() / 2);
     // 限制JV范围
     for(size_t i = 0; i < device_data.size(); i+=1)
     {
         for (size_t i = 0; i < JV_avg_data.size(); i += 1)
-            JV_avg_data[i] = (stod(merge_data[i][JV_col_data[i]]) + stod(merge_data[i][JV_col_data[i] + JV_avg_data.size()])) / 2;
+            JV_avg_data[i] = (stod(device_data[i][JV_col_data[i]]) + stod(device_data[i][JV_col_data[i] + JV_avg_data.size()])) / 2;
         if (JV_avg_data[0] > Voc_range[0] && JV_avg_data[0] < Voc_range[1] && JV_avg_data[1] > Isc_range[0] && JV_avg_data[1] < Isc_range[1] && JV_avg_data[2] > FF_range[0] &&
                 JV_avg_data[2] < FF_range[1] && JV_avg_data[3] > PCE_range[0] && JV_avg_data[3] < PCE_range[1])
+        {
+            // 数据替换
+            // 数据写入
             results.emplace_back(device_data[i]);
+        }
     }
     device_data = results;
 }
@@ -228,23 +235,13 @@ void precheck_mole_data(std::vector<std::vector<std::string>> &mole_onehot_data,
     auto FF_range = Config::get_config_values_vec<double>("FF_range");
     auto Isc_range = Config::get_config_values_vec<double>("Isc_range");
     auto Voc_range = Config::get_config_values_vec<double>("Voc_range");
-    std::vector<double> JV_avg_data(JV_col_data.size() / 2);
-    // 检查JV范围
-    for (size_t i = 0; i < merge_data.size(); i += 1)
-    {
-        for (size_t i = 0; i < JV_avg_data.size(); i += 1)
-            JV_avg_data[i] = (stod(merge_data[i][JV_col_data[i]]) + stod(merge_data[i][JV_col_data[i] + JV_avg_data.size()])) / 2;
-        if (JV_avg_data[0] > Voc_range[0] && JV_avg_data[0] < Voc_range[1] && JV_avg_data[1] > Isc_range[0] && JV_avg_data[1] < Isc_range[1] && JV_avg_data[2] > FF_range[0] &&
-                JV_avg_data[2] < FF_range[1] && JV_avg_data[3] > PCE_range[0] && JV_avg_data[3] < PCE_range[1])
-            filted_data.emplace_back(merge_data[i]);
-    }
-    mole_onehot_data.resize(filted_data.size());
-    device_data.resize(filted_data.size());
+    // 检查JV范围和合理性
+    device_jv_check(merge_data);
     // 重新写入数据
     for (size_t i = 0; i < filted_data.size(); i += 1)
     {
-        device_data[i].assign(filted_data[i].begin(), filted_data[i].begin() + 64);
-        mole_onehot_data[i].assign(filted_data[i].begin() + 65, filted_data[i].end());
+        device_data[i].assign(merge_data[i].begin(), merge_data[i].begin() + 64);
+        mole_onehot_data[i].assign(merge_data[i].begin() + 65, merge_data[i].end());
     }
 }
 
@@ -567,7 +564,6 @@ void reconstruct_input_data(std::vector<std::vector<std::string>> &device_data)
             if (j != split_data.size() - 1)
                 m_tl_layer[i] += "|";
         }
-        // std::cout << new_m_tl_layer[i] << std::endl;
     }
     // 将处理过的数据写回原始数据中
     device_data[t_tl_layer_num] = t_tl_layer;

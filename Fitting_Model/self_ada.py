@@ -1,18 +1,16 @@
-# https://www.cnblogs.com/nickchen121/p/11686780.html
-# 参数选择 https://blog.csdn.net/VariableX/article/details/107238137
 # https://www.cnblogs.com/pinard/p/6136914.html
 # https://blog.csdn.net/TeFuirnever/article/details/99656571 DecisiontreeClassifier参数选择
 
-import sys
 import os
 import numpy as np
+from sklearn.metrics import r2_score
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.ensemble import AdaBoostClassifier
 
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import StratifiedKFold
 
-from utils import grid_param_builder, remove_list_ele, load_iris_shuffle
+from utils import grid_param_builder, imbalance_process, remove_list_ele, load_iris_shuffle
 from general_model import general_model
 from params import ada_param
 
@@ -52,9 +50,20 @@ class self_ada(general_model):
             if(param[9] == '0' and param[10] == '0'):
                 param[9] = '50'
         return param
-
+    
     def _cross_valid_mtd(self, clf, x_data: np.ndarray, y_data: np.ndarray) -> float:
-        return cross_val_score(clf, x_data, y_data).mean()
+        # cross valiadtion with argumentation of training data
+        accuracy_scores = []
+        cv = StratifiedKFold(n_splits=self._fold_num)
+        for train_index, test_index in cv.split(x_data, y_data):
+            x_train, x_test = x_data[train_index], x_data[test_index]
+            y_train, y_test = y_data[train_index], y_data[test_index]
+            x_resampled, y_resampled = imbalance_process(x_train, y_train, self.argumentation_method) 
+            clf.fit(x_resampled, y_resampled)
+            y_pred = clf.predict(x_test)
+            accuracy_scores.append(r2_score(y_test, y_pred))
+
+        return float(np.mean(accuracy_scores)) 
 
 def main() -> None:
     '''示例代码'''
@@ -62,7 +71,7 @@ def main() -> None:
     x_data, y_data = load_iris_shuffle()
     param_list = grid_param_builder(ada_param)
     model.fit(x_data, y_data, param_list)
-    model.save_residual_param(abs_dir+'/ada_grid_result.txt')
+    model.save_residual_params(abs_dir+'/ada_grid_result.txt')
 
 def demo() -> None:
     x_data, y_data = load_iris_shuffle()

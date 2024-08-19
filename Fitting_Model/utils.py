@@ -1,9 +1,10 @@
 import time
 import os
 import sys
-
+from typing import Tuple
 import pickle
 from datetime import datetime
+from imblearn.over_sampling import SMOTE, ADASYN, BorderlineSMOTE
 
 from typing import Union
 import itertools as it
@@ -427,3 +428,56 @@ def str_2_bool(bool_str : str) -> bool:
         return False
     else:
         raise ValueError("Invalid bool str value: %s"%(bool_str))
+
+# 类别不平衡处理部分
+def balance_classes_smote(X : np.ndarray, y : np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    # print("SMOTE...")
+    smote = SMOTE(random_state=42)
+    X_balanced, y_balanced = smote.fit_resample(X, y)
+    # print(f"Balanced Classes: {np.bincount(y_balanced)}")
+    return X_balanced, y_balanced
+
+def balance_classes_borderlinesmote(X, y) -> Tuple[np.ndarray, np.ndarray]:
+    # print("BorderlineSMOTE...")
+    bsmote = BorderlineSMOTE(random_state=42)
+    X_balanced, y_balanced = bsmote.fit_resample(X, y)
+    # print(f"平衡后的类别分布: {np.bincount(y_balanced)}")
+    return X_balanced, y_balanced
+
+def balance_classes_adasyn(X, y) -> Tuple[np.ndarray, np.ndarray]:
+    adasyn = ADASYN(random_state=42)
+    try:
+        X_balanced, y_balanced = adasyn.fit_resample(X, y)
+        # print(f"平衡后的类别分布: {np.bincount(y_balanced)}")
+        return X_balanced, y_balanced
+    except ValueError as e:
+        # print(f"ADASYN无法生成样本: {e}")
+        # print(f"未处理的类别分布: {np.bincount(y)}")
+        return X, y
+
+def imbalance_process(x_data:np.ndarray, y_data:np.ndarray, imbalance_method:str) -> Tuple[np.ndarray, np.ndarray]:
+    # 选择类别不平衡处理方法
+    if imbalance_method == 'smote':
+        return balance_classes_smote(x_data, y_data)
+    elif imbalance_method == 'borderlinesmote':
+        return balance_classes_borderlinesmote(x_data, y_data)
+    elif imbalance_method == 'adasyn':
+        return balance_classes_adasyn(x_data, y_data)
+    else:
+        raise ValueError("Unsupported imbalance method: %s"%(imbalance_method))
+
+def check_and_create_directory(path:str, replacement_dir:str) -> str:
+    directory_path = Path(path)
+    
+    # 检查路径是否已经存在
+    if directory_path.exists():
+        # 如果路径存在，但它不是目录，使用脚本所在目录
+        if not directory_path.is_dir():
+            return replacement_dir
+        return path
+    else:
+        # 如果路径不存在，且路径是一个目录，则创建该目录
+        directory_path.mkdir(parents=True, exist_ok=True)
+        return path
+
+

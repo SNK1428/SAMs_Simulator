@@ -20,16 +20,16 @@ import pandas as pd
 import torch
 import torch.nn as nn
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from sklearn.decomposition import (PCA, SparsePCA, FactorAnalysis, KernelPCA, TruncatedSVD)
-from sklearn.ensemble import (RandomForestClassifier, AdaBoostClassifier, VotingClassifier)
+from sklearn.decomposition import PCA, SparsePCA, FactorAnalysis, KernelPCA, TruncatedSVD
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, VotingClassifier
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import (accuracy_score, mean_squared_error, r2_score)
-from sklearn.model_selection import (train_test_split, cross_val_score, StratifiedKFold, RandomizedSearchCV)
-from sklearn.naive_bayes import (GaussianNB, MultinomialNB, CategoricalNB, ComplementNB)
+from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold, RandomizedSearchCV
+from sklearn.naive_bayes import GaussianNB, MultinomialNB, CategoricalNB, ComplementNB
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from xgboost import XGBClassifier
-from imblearn.over_sampling import (SMOTE, ADASYN, BorderlineSMOTE)
+from imblearn.over_sampling import SMOTE, ADASYN, BorderlineSMOTE
 from imblearn.combine import SMOTEENN
 from scipy.stats import uniform, randint
 import shap
@@ -47,7 +47,7 @@ from self_mlp_pytorch import pytorch_model_sklearn, self_mlp_torch, Model
 
 
 # 将上一级目录添加到 sys.path
-from utils import grid_param_builder, load_iris_shuffle, write_content_to_file
+from utils import grid_param_builder, load_iris_shuffle, write_content_to_file, check_and_create_directory
 
 from params import *
 
@@ -265,7 +265,6 @@ class voting_model:
         self.pertuba_accu_list = []
         cnt = 0
         for model in self.model_list:
-            # print(cnt, '/',len(self._model_list), x_test.shape)
             cnt+=1
             # 判断是回归模型还是分类模型
             is_classification = hasattr(model, 'predict_proba') or hasattr(model, 'classes_')
@@ -465,7 +464,7 @@ def merge_results(lists:list[list], reserve_model_size=0, reserve_r2_ratio=-sys.
     return reconstruct_model_list, cross_results
 
 
-def essemble_model_builder_core(x_data:np.ndarray, y_data:np.ndarray, params_list, model_list, max_reserved_model_size, reserve_r2_threshod) -> Tuple[voting_model, list]:
+def essemble_model_builder_core(x_data:np.ndarray, y_data:np.ndarray, imbalance_method:str, params_list, model_list, max_reserved_model_size, reserve_r2_threshod) -> Tuple[voting_model, list]:
     '''电池集成模型构建'''
     def find_best_sing_model(essemble_results:list[list[list]]):
         '''子程序 从各个结果中找到单一模型最优结果'''
@@ -490,9 +489,11 @@ def essemble_model_builder_core(x_data:np.ndarray, y_data:np.ndarray, params_lis
     
     selected_params_list = []
     for param_block in range(len(params_list)):
-        model = type(model_list[param_block])()
+        # Initialize the model, and then set the params of argumentation method
+        model = type(model_list[param_block])(argumentation_method=imbalance_method)
         grid_params = grid_param_builder(params_list[param_block])
-        model.fit(x_data, y_data, grid_params)
+        # Search best hyper params
+        model.fit(x_data, y_data, grid_params, imbalance_method)
         selected_params_list.append(model.get_residual_param().tolist())
     
     # 每一种类的模型中最好的模型
@@ -500,11 +501,6 @@ def essemble_model_builder_core(x_data:np.ndarray, y_data:np.ndarray, params_lis
     print('\n------------------------------------------\nBest model in each single kinds:')
     print(best_sigle_model_params)
     print("--------------------------------------------")
-    
-    # 筛选较好的数据，如果没有规定集成模型大小，则使用所有模型参数(此判断在方法merge_results中进行)
-    # if(max_reserved_model_size == 0):
-    #     for model_param_list in selected_params_list:
-    #         max_reserved_model_size += len(model_param_list)
     
     # 模型参数列表，通过交叉验证的优劣排序
     selected_params_list, cross_results = merge_results(selected_params_list, max_reserved_model_size, reserve_r2_threshod)
@@ -522,7 +518,7 @@ def essemble_model_builder_core(x_data:np.ndarray, y_data:np.ndarray, params_lis
     # 返回集成模型(未经训练)
     return e_model, cross_results
 
-def essemble_builder(x_data: np.ndarray ,y_data: np.ndarray, max_essemble_submodel_size=0, essemble_r2_reserve_threshod=0.9) -> Tuple[voting_model, list]:
+def essemble_builder(x_data: np.ndarray ,y_data: np.ndarray, imbalance_method:str, max_essemble_submodel_size=0, essemble_r2_reserve_threshod=0.9) -> Tuple[voting_model, list]:
     # 网格参数选择
     mlp_params = mlp_torch_param.copy()
     mlp_params[0] = [x_data.shape[1]]
@@ -532,19 +528,13 @@ def essemble_builder(x_data: np.ndarray ,y_data: np.ndarray, max_essemble_submod
     # 模型列表
     model_list = [self_xgb(), self_ada(), self_knn(), self_lr(), self_rf(), self_svm(), self_mlp_torch()]
     # 参数列表
-    # params_list = [lr_param, knn_param, mlp_params]
-    # 模型列表
-    # model_list = [self_lr(), self_knn(), self_mlp_torch()]
-    # 参数列表
     params_list = [lr_param, mlp_params]
     # 模型列表
     model_list = [self_lr(), self_mlp_torch()]
 
-    # params_list = [svm_param]
-    # model_list = [self_svm()]
     # --------------------------------------------------------------
     # 模型构建
-    e_model, cross_results = essemble_model_builder_core(x_data, y_data, params_list, model_list, max_essemble_submodel_size, essemble_r2_reserve_threshod)
+    e_model, cross_results = essemble_model_builder_core(x_data, y_data, imbalance_method, params_list, model_list, max_essemble_submodel_size, essemble_r2_reserve_threshod)
     return e_model, cross_results
 
 #------------------------------------------------------------
@@ -583,44 +573,6 @@ def dimension_reduction(x_data:np.ndarray, reduction_method:str, n_components=10
     else:
         raise ValueError("Unsupported reduction method")
     return X_reduced, reducer
-
-# 类别不平衡处理部分
-def balance_classes_smote(X : np.ndarray, y : np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    print("SMOTE...")
-    smote = SMOTE(random_state=42)
-    X_balanced, y_balanced = smote.fit_resample(X, y)
-    print(f"Balanced Classes: {np.bincount(y_balanced)}")
-    return X_balanced, y_balanced
-
-def balance_classes_borderlinesmote(X, y) -> Tuple[np.ndarray, np.ndarray]:
-    print("BorderlineSMOTE...")
-    bsmote = BorderlineSMOTE(random_state=42)
-    X_balanced, y_balanced = bsmote.fit_resample(X, y)
-    print(f"平衡后的类别分布: {np.bincount(y_balanced)}")
-    return X_balanced, y_balanced
-
-def balance_classes_adasyn(X, y) -> Tuple[np.ndarray, np.ndarray]:
-    print("ADASYN...")
-    adasyn = ADASYN(random_state=42)
-    try:
-        X_balanced, y_balanced = adasyn.fit_resample(X, y)
-        print(f"平衡后的类别分布: {np.bincount(y_balanced)}")
-        return X_balanced, y_balanced
-    except ValueError as e:
-        print(f"ADASYN无法生成样本: {e}")
-        print(f"未处理的类别分布: {np.bincount(y)}")
-        return X, y
-
-def imbalance_process(x_data:np.ndarray, y_data:np.ndarray, imbalance_method:str) -> Tuple[np.ndarray, np.ndarray]:
-    # 选择类别不平衡处理方法
-    if imbalance_method == 'smote':
-        return balance_classes_smote(x_data, y_data)
-    elif imbalance_method == 'borderlinesmote':
-        return balance_classes_borderlinesmote(x_data, y_data)
-    elif imbalance_method == 'adasyn':
-        return balance_classes_adasyn(x_data, y_data)
-    else:
-        raise ValueError("Unsupported imbalance method: %s"%(imbalance_method))
 
 def remove_multicollinearity(X_encoded, threshold=0.95) -> Tuple[np.ndarray, list]:
     '''消除多重共线性'''
@@ -661,27 +613,10 @@ def onehot_importance_reflection(importance_list, index_list:list, index_maps:di
     return onehot_importances
 
 def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_dir:str,
-                reduction_methods=None, imbalance_methods=None, scaler_methods=None,
+                reduction_methods:list[str], imbalance_methods:list[str], scaler_methods:list[str], 
                 dimension_reduction_components=3, reserve_r2_ratio=0.9, max_reserve_model_size=200):
-    def check_and_create_directory(path:str, replacement_dir:str) -> str:
-        directory_path = Path(path)
-        
-        # 检查路径是否已经存在
-        if directory_path.exists():
-            # 如果路径存在，但它不是目录，使用脚本所在目录
-            if not directory_path.is_dir():
-                return replacement_dir
-            return path
-        else:
-            # 如果路径不存在，且路径是一个目录，则创建该目录
-            directory_path.mkdir(parents=True, exist_ok=True)
-            return path
-
-    def load_index_map() -> dict:
-        '''加载映射回onehot文件的数据'''
-        return dict()
-
-    # 特征重要性映射回原始特征
+    
+    #  特征重要性映射回原始特征
     def map_feature_importance_back(feature_importances:np.ndarray, reducer, method:str) -> np.ndarray:
         # 确保 feature_importances 是 2 维数组
         if feature_importances.ndim == 1:
@@ -707,17 +642,11 @@ def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_di
         else:
             raise ValueError("Error Scaler")
    
-    # 降维方式：在外部确定，因为SAMs不需要
-    reduction_methods = ['pca', 'KernelPCA', 'TruncatedSVD']
-    # 不平衡数据处理方式
-    imbalance_methods = ['smote', 'borderlinesmote', 'adasyn']
-    scaler_methods = ['MinMaxScaler','StandardScaler']
- 
     # 构建合法的存储目录
     models_saving_root_dir = check_and_create_directory(models_saving_root_dir, os.path.dirname(os.path.abspath(__file__)))
     print('Model Records Storage dir:%s'%(models_saving_root_dir))
     #------------------------------------------------------
-    #  不需要通过此方法降低共线性，因为onehot使得特征正交了
+    # remove multi-colliear datas
     # x_data, remained_feature_pos = remove_multicollinearity(x_data)
     # 数据归一化
     for scaler in scaler_methods: 
@@ -735,13 +664,13 @@ def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_di
                 else:
                     x_reduced = x_data
                 # 重采样
-                x_resampled, y_resampled = imbalance_process(x_reduced, y_data, imbalance_method)
-                print(x_resampled.shape, y_resampled.shape)
-                # 切分训练集，验证集
-                x_resampled, x_test, y_resampled, y_test = train_test_split(x_resampled, y_resampled, test_size=0.3, random_state=42)
+                # x_resampled, y_resampled = imbalance_process(x_reduced, y_data, imbalance_method)
+                # print(x_resampled.shape, y_resampled.shape)
+                x_resampled = x_reduced
+                y_resampled = y_data
                 # 构建集成模型
-                e_model, cross_results = essemble_builder(x_resampled, y_resampled, max_reserve_model_size, reserve_r2_ratio)
-                # 模型进行训练
+                e_model, cross_results = essemble_builder(x_data, y_data, imbalance_method, max_reserve_model_size, reserve_r2_ratio)
+                # 模型进行训练(Using argumentated data)
                 e_model.fit(x_resampled, y_resampled)
         
                 # ---------------------------------------------------------------
@@ -770,7 +699,6 @@ def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_di
                 # 存储放大器
                 with open(scalar_storage_name, 'wb') as f:
                     pickle.dump(std_standarder, f)
-                
 
                 # 存储降维器
                 if(reducer is not None):
@@ -781,7 +709,10 @@ def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_di
                 # 清除集成模型中的数据，用于下一轮训练
                 e_model.clear_attribute()
 
-def build_cell_models():
+def build_cell_models(x_data, y_data, max_reserve_model_size, reserve_r2_ratio, model_saving_dir:str, reduce_components = 3):
+    # 保留模型r2阈值（0.9）
+    # 保留模型最大数目，0代表保留所有模型
+    # reduce_components: 降维后维数
     '''入口'''
     def load_data():
         '''读取数据，并处理为标准输入形式（iris集形式）'''
@@ -799,41 +730,29 @@ def build_cell_models():
         print(f"原始数据维度: {data.shape}")
         return data, labels
     
-    # 保留模型r2阈值（0.9）
-    reserve_r2_ratio=0.9
-    # 保留模型最大数目，0代表保留所有模型
-    max_reserve_model_size=0
-    
-    # 降维后的维数
-    n_components = 3
+    # 临时数据
+    #---------------------------------------------------- 
     # 加载数据
     n_samples = 42000
     n_features = 15000
     n_classes = 24
     x_data, y_data = generate_onehot_data(n_samples, n_features, n_classes)
-
     # 原始数据 
     x_data, y_data = load_data()
+
+    #-----------------------------------------------------
+    
     # 结果记录的目录
-    record_dir = os.path.dirname(os.path.abspath(__file__))+'/record_dir'
+    model_saving_dir = os.path.dirname(os.path.abspath(__file__))+'/record_dir'
     # 降维方式：在外部确定，因为SAMs不需要
     reduction_methods = ['pca', 'KernelPCA', 'TruncatedSVD']
     # 不平衡数据处理方式
     imbalance_methods = ['smote', 'borderlinesmote', 'adasyn']
     scaler_methods = ['MinMaxScaler','StandardScaler']
     # 构建模型1
-    model_bulder(x_data, y_data, record_dir, n_components, reserve_r2_ratio, max_reserve_model_size)
+    model_bulder(x_data, y_data, model_saving_dir,reduction_methods, imbalance_methods, scaler_methods, reduce_components, reserve_r2_ratio, max_reserve_model_size)
 
-
-def build_SAMs_model():
-    def load_data():
-        '''读取数据，并处理为标准输入形式（iris集形式）'''
-        # 读取
-        # 分桶
-        # 重采样
-        x_data, y_data = load_iris_shuffle()
-        return x_data, y_data
-    
+def build_SAMs_model(x_data, y_data, max_reserve_model_size, reserve_r2_ratio, cell_model_path, model_saving_dir:str):
     # 数据生成和预处理部分
     def generate_onehot_data(n_samples, n_features, n_classes):
         np.random.seed(42)
@@ -842,11 +761,7 @@ def build_SAMs_model():
         print(f"原始数据维度: {data.shape}")
         return data, labels
     
-    # 保留模型r2阈值（0.9）
-    reserve_r2_ratio=0.7
-    # 保留模型最大数目，0代表保留所有模型
-    max_reserve_model_size=0
-    
+    #---------------------------------
     # 降维后的维数
     n_components = 3
     # 加载数据
@@ -854,31 +769,37 @@ def build_SAMs_model():
     n_features = 15000
     n_classes = 24
     x_data, y_data = generate_onehot_data(n_samples, n_features, n_classes)
-    record_dir = os.path.dirname(os.path.abspath(__file__))+'/record_dir_sams'
+    #---------------------------------
+
+    model_saving_dir = os.path.dirname(os.path.abspath(__file__))+'/record_dir_sams'
     # 构建SAMs的输入
-    cell_model_path = ''
-    cell_model_scaler = ''
-    cell_model_reducer = ''
     with open(cell_model_path, 'rb') as f:
         cell_e_model:voting_model = pickle.load(f)
     # 差减值
     y_predict = cell_e_model.predict(x_data)
     y_input = y_data-y_predict
     # 模型构建
-    # 多重共线性降维
+
+    # 降维方式：在外部确定，因为SAMs不需要
+    reduction_methods = ['None']
+    # 不平衡数据处理方式
+    imbalance_methods = ['smote', 'borderlinesmote', 'adasyn']
+    scaler_methods = ['MinMaxScaler','StandardScaler']
+    # 去除数据多重共线性 
     x_data,_ = remove_multicollinearity(x_data)
-    model_bulder(x_data, y_input, record_dir, n_components, reserve_r2_ratio, max_reserve_model_size)
+    
+    model_bulder(x_data, y_input, model_saving_dir, reduction_methods, imbalance_methods, scaler_methods, n_components, reserve_r2_ratio, max_reserve_model_size)
 
-def model_rating_and_importance_analysis(onehot_reflection_list:None):
-    def load_data():
-        '''读取数据，并处理为标准输入形式（iris集形式）'''
-        # 读取
-        # 分桶
-        # 重采样
-        x_data, y_data = load_iris_shuffle()
-        return x_data, y_data
+def load_data():
+    '''读取数据，并处理为标准输入形式（iris集形式）'''
+    # 读取
+    # 分桶
+    # 重采样
+    x_data, y_data = load_iris_shuffle()
+    return x_data, y_data
 
-    # 特征重要性映射回原始特征
+def model_rating_and_importance_analysis(x_train:np.ndarray, x_test:np.ndarray, y_test:np.ndarray, model_path:str, scalar_path:str, reducer_path:str, onehot_reflection_list:None):
+    # 评价每一个模型的特征重要性
     def map_feature_importance_back(feature_importances:np.ndarray, reducer, method:str) -> np.ndarray:
         # 确保 feature_importances 是 2 维数组
         if feature_importances.ndim == 1:
@@ -899,21 +820,13 @@ def model_rating_and_importance_analysis(onehot_reflection_list:None):
     def get_reducer_type() -> str:
       ...
 
-    # 测试数据 
-    x_test, y_test = load_data() 
-    x_resampled = x_test.copy()
-    # 背景数据（用于重要性分析）
-    cell_model_path = ''
-    cell_model_scaler = ''
-    cell_model_reducer = ''
-    
     # 获取模型
-    with open(cell_model_path, 'rb') as f:
+    with open(model_path, 'rb') as f:
         e_model:voting_model = pickle.load(f) 
     # 获取降维器，scalar    
-    with open(cell_model_path, 'rb') as f:
+    with open(model_path, 'rb') as f:
         scalar = pickle.load(f) 
-    with open(cell_model_path, 'rb') as f:
+    with open(model_path, 'rb') as f:
         reducer = pickle.load(f) 
     
     reduction_method = ''
@@ -922,7 +835,7 @@ def model_rating_and_importance_analysis(onehot_reflection_list:None):
     #--------------------------------------------------------------------
     e_model.calculate_perturbation_accuracy(x_test, y_test)
     print('Per built')
-    e_model.calculate_shap_importance(x_resampled[:int(len(x_resampled)/10)], x_test, workers=4)
+    e_model.calculate_shap_importance(x_train[:int(len(x_train)/10)], x_test, workers=4)
     print('SHAP built')
     # 特征重要性集成，获取平均特征重要性列表
     # 构建特征重要性            
@@ -955,7 +868,78 @@ def best_model_predict(cell_x_data:np.ndarray, cell_model:voting_model, sams_mod
       cnt_1+=1
     return result_list
 
+
+def model_search():
+    ...
+
+def importance_rating():
+    ...
+
+def predict_data():
+    ...
+
+
+def main():
+    
+    device_data_path = ''
+    mole_device_data_path=''
+    mole_data_path = ''
+    onehot_reflection_data_path = ''
+    cell_model_dir = ''
+    sams_model_dir = ''
+    actual_cell_model_path = ''
+    actual_sams_model_path =''
+    actual_cell_reducer_path = ''
+    actual_cell_scalar_path = ''
+    actual_sams_reducer_path = ''
+    acatual_sams_scalar_path = ''
+
+    cell_reserve_r2_ratio=0.9
+    sam_reserve_r2_ratio=0.75
+    cell_model_max_size =1000
+    sam_model_max_size = 1000
+
+    cell_device_data = np.loadtxt(device_data_path)
+    mole_device_data = np.loadtxt(mole_device_data_path)
+    mole_data = np.loadtxt(mole_data_path) 
+    cell_x_data = np.concatenate((cell_device_data[:, :50], cell_device_data[:,59:]), axis=1)
+    cell_y_data = cell_device_data[:, 51:58]
+    mole_x_data =  np.concatenate((mole_device_data[:, :50], mole_device_data[:,59:]), axis=1)
+    mole_y_data = mole_device_data[:, 51:58]
+    del cell_device_data
+    del mole_device_data
+    
+    #-----------------------------------
+    # binning
+    cell_y_data, cell_mean_list = binning(cell_y_data)
+    mole_y_data, mole_mean_list = binning(mole_y_data)  
+     
+    # reserve some test data for importance analysis
+    cell_x_train, cell_x_test, cell_y_train, cell_y_test = train_test_split(cell_x_data, cell_y_data, test_size=0.2, random_state=42, stratify=cell_y_data) 
+    mole_x_train, mole_x_test, mole_y_train, mole_y_test = train_test_split(mole_x_data, mole_y_data, test_size=0.15, random_state=42, stratify=mole_y_data)
+    
+    #-----------------------------------
+    # build training and test data for cell model
+    build_cell_models(cell_x_train, cell_y_train, cell_model_max_size, cell_reserve_r2_ratio, cell_model_dir)
+    # for model for sams, using all data to fitting  
+    build_SAMs_model(mole_x_train, mole_y_train, sam_model_max_size, sam_reserve_r2_ratio, actual_cell_model_path, sams_model_dir)
+    
+    #-----------------------------------
+    # rating importance of each feature
+    model_rating_and_importance_analysis(cell_x_train, cell_x_test, cell_y_test, actual_cell_model_path, actual_cell_scalar_path, actual_cell_reducer_path, onehot_reflection_list) 
+    model_rating_and_importance_analysis()
+
+    # Predict data
+    data_for_predict_path = ''
+    predict_data = np.loadtxt(data_for_predict_path)
+    # load cells model
+    # load sams model
+    # predict cells perfromance
+    # predict sams performance
+    # ranking
+    # reflection classified predict_value to original data
+
+    # reflection classified predict_value to original data
+
 if __name__ == "__main__":
-    build_cell_models()
-    build_SAMs_model()
-    model_rating_and_importance_analysis() 
+    main()

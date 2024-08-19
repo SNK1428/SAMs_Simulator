@@ -390,7 +390,10 @@ class self_mlp_torch(general_model):
         
     def _param_filter(self, param: np.ndarray) -> np.ndarray:
         return param
-    
+   
+    def _argumentation_method(self, x_data: np.ndarray, y_data: np.ndarray):
+        ...
+
     def fit(self, x_data: np.ndarray, y_data: np.ndarray, param_list: np.ndarray) -> None:
         # 进行数据格式统一，交叉验证数据拆分，传入GPU设备
         self.k_fold_data = utils.build_k_fold_data(self.cv,torch.from_numpy(x_data).float(), torch.from_numpy(y_data).float())
@@ -399,6 +402,11 @@ class self_mlp_torch(general_model):
                 if j % 2 == 1:
                     self.k_fold_data[i][j] = self.k_fold_data[i][j].long().squeeze(-1)
                 self.k_fold_data[i][j] = self.k_fold_data[i][j].to(self.calc_device)
+        # Implement data argumentation
+        for i in range(len(self.k_fold_data)):
+            ...
+
+        # call fit method of herent class, the x_data and y_data is ununsed in this method
         super().fit(x_data, y_data, param_list)
         # 数据传回CPU
         for i in range(len(self.k_fold_data)):
@@ -420,7 +428,7 @@ def main():
     params = grid_param_builder(mlp_torch_param)
     clf = self_mlp_torch()
     clf.fit(x_data, y_data, params)
-    clf.save_residual_param(sys.path[0]+'/tmp.txt')
+    clf.save_residual_params(sys.path[0]+'/tmp.txt')
     # 优化方法
 
 def demo():

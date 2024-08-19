@@ -33,7 +33,7 @@ def main() -> int:
     x_data, y_data = load_iris_shuffle()
     rf_clf = self_rf()
     rf_clf.fit(x_data, y_data, para_list)
-    rf_clf.save_residual_param(abs_dir + '/rf_grid_result.txt')
+    rf_clf.save_residual_params(abs_dir + '/rf_grid_result.txt')
     return 0
 
 if __name__ == "__main__":

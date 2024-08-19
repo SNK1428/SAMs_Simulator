@@ -12,8 +12,10 @@ from datetime import datetime
 from sklearn.model_selection import KFold#导入切分训练集、测试集模块
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import r2_score
+from sklearn.model_selection import StratifiedKFold
 
-from utils import grid_param_builder, load_iris_shuffle, load_data_from_path
+from utils import grid_param_builder, load_iris_shuffle, imbalance_process
 from general_model import general_model
 from params import knn_param
 
@@ -22,7 +24,19 @@ class self_knn(general_model):
     '''https://scikit-learn.org/stable/modules/generated/sklearn.neighbors.KNeighborsClassifier.html'''
     
     def _cross_valid_mtd(self, clf, x_data: np.ndarray, y_data: np.ndarray) -> float:
-        return cross_val_score(clf, x_data, y_data, cv=self.cv, scoring='r2').mean()
+        # cross valiadtion with argumentation of training data
+        accuracy_scores = []
+        cv = StratifiedKFold(n_splits=self._fold_num)
+        for train_index, test_index in cv.split(x_data, y_data):
+            x_train, x_test = x_data[train_index], x_data[test_index]
+            y_train, y_test = y_data[train_index], y_data[test_index]
+            x_resampled, y_resampled = imbalance_process(x_train, y_train, self.argumentation_method) 
+            clf.fit(x_resampled, y_resampled)
+            y_pred = clf.predict(x_test)
+            accuracy_scores.append(r2_score(y_test, y_pred))
+
+        return float(np.mean(accuracy_scores)) 
+
 
     def _param_filter(self, param: np.ndarray) -> np.ndarray:
         if param[4] != 'minkowski':
@@ -39,29 +53,20 @@ class self_knn(general_model):
                 n_neighbors=int(param[0]),weights=param[1],algorithm=param[2], 
                 leaf_size=int(param[3]), metric=param[4], n_jobs=-1)
 
-def demo() -> int:
+def main() -> int:
     b_time = time.time() 
     iris_x, iris_y = load_iris_shuffle()
     param_list = grid_param_builder(knn_param)
     np.random.shuffle(param_list)
-    knn_model = self_knn()
+    knn_model = self_knn(fold_num=5, argumentation_method='smote')
     knn_model.fit(iris_x, iris_y,param_list)
-    knn_model.save_residual_param(abs_dir + '/knn_grid_result.txt')
-    best_model = knn_model.get_best_clf()
+    knn_model.save_residual_params(abs_dir + '/knn_grid_result.txt')
+    best_model = knn_model.best_clf
     r2 = cross_val_score(best_model, iris_x, iris_y, cv=5, scoring='r2')
     print("R2 (cross vali): %0.3f (+/- %0.3f)" % (r2.mean(), r2.std() * 2))
     print('time:', time.time() - b_time)
     return 0
 
-def main():
-    data_src_dir = abs_dir+'/../data/cell_input_data_new_1'
-    data_out_dir = abs_dir+'/../data/cell_input_data_new_1/out'
-    x_data, y_data = load_data_from_path(2, data_out_dir, data_out_dir, data_src_dir)
-    data = np.concatenate((x_data, y_data), axis=1)
-    np.random.shuffle(data)
-    x_data = data[:,:-8]
-    y_data = data[:,-8:]
-
 if __name__ == "__main__":
     abs_dir = os.path.dirname(os.path.abspath(__file__))
-    demo()
+    main()

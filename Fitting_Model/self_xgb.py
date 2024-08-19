@@ -91,7 +91,7 @@ def main()->int:
     xgb_param = grid_param_builder(xgb_sk_params)
     clf = self_xgb()
     clf.fit(x_data, y_data, xgb_param)
-    clf.save_residual_param(abs_dir+'/xgb_grid_result.txt')
+    clf.save_residual_params(abs_dir+'/xgb_grid_result.txt')
     return 0
 
 def demo_1():

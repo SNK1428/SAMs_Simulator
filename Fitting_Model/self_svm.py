@@ -78,8 +78,8 @@ def main() -> int:
     x_data, y_data = load_iris_shuffle()
     model = self_svm()
     model.fit(x_data,y_data, param_list)
-    best_clf = model.get_best_clf()
-    model.save_residual_param(abs_dir + '/svm_grid_params.txt')
+    best_clf = model.best_clf
+    model.save_residual_params(abs_dir + '/svm_grid_params.txt')
     scores = cross_val_score(best_clf, x_data, y_data, scoring='r2')
     print("R2(cross vali): %0.2f (+/- %0.2f)" % (scores.mean(), scores.std() * 2))
     return 0

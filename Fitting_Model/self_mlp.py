@@ -6,11 +6,12 @@ import datetime
 from sklearn import datasets
 from sklearn.neural_network import MLPClassifier
 import numpy as np
-from sklearn.model_selection import cross_val_score
 
-from utils import grid_param_builder, load_iris_shuffle, remove_list_ele
+from utils import grid_param_builder, load_iris_shuffle, remove_list_ele, imbalance_process
+from sklearn.model_selection import StratifiedKFold
 from general_model import general_model
 from params import mlp_sk_weak_list, mlp_param_list
+from sklearn.metrics import r2_score
 
 
 
@@ -103,7 +104,17 @@ class self_mlp(general_model):
         return param
     
     def _cross_valid_mtd(self, clf, x_data: np.ndarray, y_data: np.ndarray) -> float:
-        return cross_val_score(clf, x_data, y_data, cv=5, scoring='r2').mean()
+        accuracy_scores = []
+        cv = StratifiedKFold(n_splits=self._fold_num)
+        for train_index, test_index in cv.split(x_data, y_data):
+            x_train, x_test = x_data[train_index], x_data[test_index]
+            y_train, y_test = y_data[train_index], y_data[test_index]
+            x_resampled, y_resampled = imbalance_process(x_train, y_train, self.argumentation_method) 
+            clf.fit(x_resampled, y_resampled)
+            y_pred = clf.predict(x_test)
+            accuracy_scores.append(r2_score(y_test, y_pred))
+
+        return float(np.mean(accuracy_scores)) 
 
 def main():
     iris_data = datasets.load_iris()
@@ -112,7 +123,7 @@ def main():
     hyper_param_list =  grid_param_builder(mlp_sk_weak_list)
     clf = self_mlp()
     clf.fit(x_data, y_data, hyper_param_list)
-    clf.save_residual_param(abs_dir + '/mlp_grid_result.txt')
+    clf.save_residual_params(abs_dir + '/mlp_grid_result.txt')
 
 if __name__ == "__main__":
     abs_dir = os.path.dirname(os.path.abspath(__file__))

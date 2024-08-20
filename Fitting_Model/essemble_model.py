@@ -923,6 +923,9 @@ def build_cell_model(cell_x_data:np.ndarray, cell_y_data:np.ndarray):
     cell_scaler_methods = ['MinMaxScaler','StandardScaler']
     model_builder(cell_x_data, cell_y_data, cell_model_dir, cell_reduction_methods, cell_imbalance_methods, cell_scaler_methods, reduction_component, cell_reserve_r2_ratio, cell_model_max_size)
 
+    # search best model
+
+
 def build_sams_model(cell_x_data:np.ndarray, cell_y_data:np.ndarray, mole_x_data:np.ndarray):
     # 降维方式：在外部确定，因为SAMs不需要
     sams_reduction_methods = ['None']
@@ -938,6 +941,8 @@ def build_sams_model(cell_x_data:np.ndarray, cell_y_data:np.ndarray, mole_x_data
     mole_y_diff = cell_y_data - cell_performance
     # search best model
     model_builder(mole_x_data, mole_y_diff,sams_model_dir, sams_reduction_methods, sams_imbalance_methods, sams_scaler_methods, reduction_component, sam_reserve_r2_ratio, sam_model_max_size)
+    
+    # search best model
 
 def rating_feature_importance():
     # load training and test data from given path

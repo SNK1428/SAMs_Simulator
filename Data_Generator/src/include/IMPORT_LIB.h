@@ -7,6 +7,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <cassert>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>

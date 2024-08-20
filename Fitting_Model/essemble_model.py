@@ -1,4 +1,5 @@
 # 标准库导入
+from ctypes import Union
 from logging import root
 import math
 import os
@@ -13,10 +14,12 @@ from multiprocessing import Pool
 from typing import Tuple
 import pickle
 from pathlib import Path
-
+from typing import Union
 # 第三方库导入
 import numpy as np
 import pandas as pd
+from pandas.core.indexes.base import astype_array
+from scipy.optimize._lsq.common import print_iteration_nonlinear
 import torch
 import torch.nn as nn
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -91,7 +94,7 @@ def pca_method(x_data, n_components, scaler_path, pca_path):
     return x_pca, pca.components_, pca.explained_variance_ratio_
 
 
-def binning(y_data:np.ndarray, num_buckets=10, method='uniform', min_bucket_size=5):
+def binning_num_arr(y_data:np.ndarray, num_buckets=10, method='uniform', min_bucket_size=5):
     '''分桶
         num_buckets 分为几桶
         min_bucket_size 最小分桶数据阈值
@@ -150,9 +153,51 @@ def binning(y_data:np.ndarray, num_buckets=10, method='uniform', min_bucket_size
                 new_bucketed_data.append(num_buckets - 2)
             else:
                 new_bucketed_data.append(bucket - 1 if len(bucket_dict[bucket - 1]) > 0 else bucket + 1)
+    
+    # check binning range
+    new_bucketed_data = np.array(new_bucketed_data)  
+    upper_range = dict()
+    for i in range(len(y_data)):
+        if(new_bucketed_data[i] in upper_range):
+            if(y_data[i] > upper_range[new_bucketed_data[i]]):
+                upper_range[new_bucketed_data[i]] = y_data[i]
+        else:
+            upper_range[new_bucketed_data[i]] = y_data[i]
+    lower_range = dict()
+    for i in range(len(y_data)):
+        if(new_bucketed_data[i] in lower_range):
+            if(y_data[i] < lower_range[new_bucketed_data[i]]):
+                lower_range[new_bucketed_data[i]] = y_data[i]
+        else:
+            lower_range[new_bucketed_data[i]] = y_data[i]
+    data_range = []
+    key = list(sorted(upper_range.keys()))
+    for i in range(len(key)):
+        pair = []
+        pair.append(key[i])
+        pair.append(lower_range[key[i]])
+        pair.append(upper_range[key[i]])
+        data_range.append(pair)
+    means = sorted(means)
+    return new_bucketed_data, means, data_range
 
-    return np.array(new_bucketed_data), means
 
+def binning_based_on_range(y_data:Union[np.ndarray, list], data_range:list[list[int]]) -> np.ndarray:
+    # data_range need to be sorted pos1: classification label pos2 left edge(left-incursive) pos3 right edge
+    # build bin range
+    # without error check
+    sorted(data_range, key=lambda x: x[0])
+    bin_range = []
+    labels = []
+    for i in range(len(data_range)-1):
+        if i == 0:
+            bin_range.append(-float('inf'))
+        bin_range.append(data_range[i+1][1])
+        labels.append(data_range[i][0])
+    bin_range.append(float('inf'))
+    labels.append(data_range[-1][0])
+    data_bin = pd.cut(y_data, bin_range, labels=labels, right=False).tolist()
+    return np.ndarray(data_bin)
 
 # ---------------------------------------------------------------------------------
 
@@ -612,7 +657,7 @@ def onehot_importance_reflection(importance_list, index_list:list, index_maps:di
         onehot_importances[index_maps[index_list[i]]] += importance_list[i]
     return onehot_importances
 
-def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_dir:str,
+def model_builder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_dir:str,
                 reduction_methods:list[str], imbalance_methods:list[str], scaler_methods:list[str], 
                 dimension_reduction_components=3, reserve_r2_ratio=0.9, max_reserve_model_size=200):
     
@@ -663,15 +708,10 @@ def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_di
                     x_reduced, reducer = dimension_reduction(x_data, reduction_method, dimension_reduction_components)
                 else:
                     x_reduced = x_data
-                # 重采样
-                # x_resampled, y_resampled = imbalance_process(x_reduced, y_data, imbalance_method)
-                # print(x_resampled.shape, y_resampled.shape)
-                x_resampled = x_reduced
-                y_resampled = y_data
                 # 构建集成模型
                 e_model, cross_results = essemble_builder(x_data, y_data, imbalance_method, max_reserve_model_size, reserve_r2_ratio)
                 # 模型进行训练(Using argumentated data)
-                e_model.fit(x_resampled, y_resampled)
+                e_model.fit(x_reduced, y_data)
         
                 # ---------------------------------------------------------------
                 # 存储模型
@@ -709,50 +749,37 @@ def model_bulder(x_data_raw:np.ndarray, y_data:np.ndarray, models_saving_root_di
                 # 清除集成模型中的数据，用于下一轮训练
                 e_model.clear_attribute()
 
-def build_cell_models(x_data, y_data, max_reserve_model_size, reserve_r2_ratio, model_saving_dir:str, reduce_components = 3):
+def build_cell_models(x_data, y_data, max_reserve_model_size, reserve_r2_ratio, model_saving_dir:str, 
+                      reduction_methods:list, imbalance_methods:list, scaler_methods:list, reduce_components = 3):
     # 保留模型r2阈值（0.9）
     # 保留模型最大数目，0代表保留所有模型
     # reduce_components: 降维后维数
-    '''入口'''
-    def load_data():
-        '''读取数据，并处理为标准输入形式（iris集形式）'''
-        # 读取
-        # 分桶
-        # 重采样
-        x_data, y_data = load_iris_shuffle()
-        return x_data, y_data
-    
     # 数据生成和预处理部分
-    def generate_onehot_data(n_samples, n_features, n_classes):
-        np.random.seed(42)
-        data = np.random.randint(2, size=(n_samples, n_features))
-        labels = np.random.randint(n_classes, size=n_samples)
-        print(f"原始数据维度: {data.shape}")
-        return data, labels
+    # def generate_onehot_data(n_samples, n_features, n_classes):
+    #     np.random.seed(42)
+    #     data = np.random.randint(2, size=(n_samples, n_features))
+    #     labels = np.random.randint(n_classes, size=n_samples)
+    #     print(f"原始数据维度: {data.shape}")
+    #     return data, labels
     
     # 临时数据
     #---------------------------------------------------- 
     # 加载数据
-    n_samples = 42000
-    n_features = 15000
-    n_classes = 24
-    x_data, y_data = generate_onehot_data(n_samples, n_features, n_classes)
+    # n_samples = 42000
+    # n_features = 15000
+    # n_classes = 24
+    # x_data, y_data = generate_onehot_data(n_samples, n_features, n_classes)
     # 原始数据 
     x_data, y_data = load_data()
 
     #-----------------------------------------------------
     
     # 结果记录的目录
-    model_saving_dir = os.path.dirname(os.path.abspath(__file__))+'/record_dir'
-    # 降维方式：在外部确定，因为SAMs不需要
-    reduction_methods = ['pca', 'KernelPCA', 'TruncatedSVD']
-    # 不平衡数据处理方式
-    imbalance_methods = ['smote', 'borderlinesmote', 'adasyn']
-    scaler_methods = ['MinMaxScaler','StandardScaler']
+    # model_saving_dir = os.path.dirname(os.path.abspath(__file__))+'/record_dir'
     # 构建模型1
-    model_bulder(x_data, y_data, model_saving_dir,reduction_methods, imbalance_methods, scaler_methods, reduce_components, reserve_r2_ratio, max_reserve_model_size)
+    model_builder(x_data, y_data, model_saving_dir,reduction_methods, imbalance_methods, scaler_methods, reduce_components, reserve_r2_ratio, max_reserve_model_size)
 
-def build_SAMs_model(x_data, y_data, max_reserve_model_size, reserve_r2_ratio, cell_model_path, model_saving_dir:str):
+def build_SAMs_model(x_data, y_data, mole_data:np.ndarray, max_reserve_model_size, reserve_r2_ratio, cell_model_path, model_saving_dir:str):
     # 数据生成和预处理部分
     def generate_onehot_data(n_samples, n_features, n_classes):
         np.random.seed(42)
@@ -788,7 +815,7 @@ def build_SAMs_model(x_data, y_data, max_reserve_model_size, reserve_r2_ratio, c
     # 去除数据多重共线性 
     x_data,_ = remove_multicollinearity(x_data)
     
-    model_bulder(x_data, y_input, model_saving_dir, reduction_methods, imbalance_methods, scaler_methods, n_components, reserve_r2_ratio, max_reserve_model_size)
+    model_builder(x_data, y_input, model_saving_dir, reduction_methods, imbalance_methods, scaler_methods, n_components, reserve_r2_ratio, max_reserve_model_size)
 
 def load_data():
     '''读取数据，并处理为标准输入形式（iris集形式）'''
@@ -798,7 +825,7 @@ def load_data():
     x_data, y_data = load_iris_shuffle()
     return x_data, y_data
 
-def model_rating_and_importance_analysis(x_train:np.ndarray, x_test:np.ndarray, y_test:np.ndarray, model_path:str, scalar_path:str, reducer_path:str, onehot_reflection_list:None):
+def model_rating_and_importance_analysis(x_train:np.ndarray, x_test:np.ndarray, y_test:np.ndarray, model_path:str, reducer_path:str, onehot_reflection_list:None):
     # 评价每一个模型的特征重要性
     def map_feature_importance_back(feature_importances:np.ndarray, reducer, method:str) -> np.ndarray:
         # 确保 feature_importances 是 2 维数组
@@ -853,93 +880,178 @@ def model_rating_and_importance_analysis(x_train:np.ndarray, x_test:np.ndarray, 
         onehot_importance_per = onehot_importance_reflection(per_importance_list_re, onehot_reflection_list, index_maps)
         onehot_importance_shap = onehot_importance_reflection(shap_importance_list_re, onehot_reflection_list, index_maps)
 
-def best_model_predict(cell_x_data:np.ndarray, cell_model:voting_model, sams_model:voting_model, sams_input_datas:np.ndarray):
-    '''获取可能有最高性能的电池结构，并且与模型拟合，具有较高性能的SAMs进行组合'''
-    y_data = cell_model.predict(cell_x_data)
-    sams_predict_data = sams_model.predict(sams_input_datas)
-    # 获取效率排序
-    result_list = []
-    cnt_1 = 0
-    for line in y_data:
-      cnt_2 = 0
-      for line_1 in sams_predict_data:
-        result_list.append[[cnt_1, cnt_2, line+line_1]]
-        cnt_2+=1
-      cnt_1+=1
-    return result_list
+device_data_path = ''
+mole_device_data_path=''
+mole_data_path = ''
+predict_data_path = ''
+onehot_reflection_data_path = ''
+
+cell_training_data_path = ''
+cell_test_data_path = ''
+sam_training_data_path = ''
+sam_test_data_path = ''
+
+cell_model_dir = ''
+sams_model_dir = ''
+
+predict_result_saving_path = ''
+
+actual_cell_model_path = ''
+actual_sams_model_path =''
+actual_cell_reducer_path = ''
+actual_cell_scalar_path = ''
+actual_sams_reducer_path = ''
+acatual_sams_scalar_path = ''
+
+binning_means_path = ''
+binning_range_path = ''
+
+cell_reserve_r2_ratio=0.9
+sam_reserve_r2_ratio=0.75
+cell_model_max_size =1000
+sam_model_max_size = 1000
 
 
-def model_search():
-    ...
+reduction_component = 1800  # components reserved scale in dimention reduction procedure
 
-def importance_rating():
-    ...
+def build_cell_model(cell_x_data:np.ndarray, cell_y_data:np.ndarray):
+    # 降维方式：在外部确定，因为sams不需要
+    cell_reduction_methods = ['pca', 'kernelpca', 'truncatedsvd']
+    # 不平衡数据处理方式
+    cell_imbalance_methods = ['smote', 'borderlinesmote', 'adasyn']
+    # 
+    cell_scaler_methods = ['MinMaxScaler','StandardScaler']
+    model_builder(cell_x_data, cell_y_data, cell_model_dir, cell_reduction_methods, cell_imbalance_methods, cell_scaler_methods, reduction_component, cell_reserve_r2_ratio, cell_model_max_size)
+
+def build_sams_model(cell_x_data:np.ndarray, cell_y_data:np.ndarray, mole_x_data:np.ndarray):
+    # 降维方式：在外部确定，因为SAMs不需要
+    sams_reduction_methods = ['None']
+    # 不平衡数据处理方式
+    sams_imbalance_methods = ['smote', 'borderlinesmote', 'adasyn']
+    # rescale the data
+    sams_scaler_methods = ['MinMaxScaler','StandardScaler']
+    # load model of cell
+    with open(actual_cell_model_path, 'rb') as f:
+        cell_model:voting_model = pickle.load(f)
+    # build valid_target_value 
+    cell_performance = cell_model.predict(cell_x_data) 
+    mole_y_diff = cell_y_data - cell_performance
+    # search best model
+    model_builder(mole_x_data, mole_y_diff,sams_model_dir, sams_reduction_methods, sams_imbalance_methods, sams_scaler_methods, reduction_component, sam_reserve_r2_ratio, sam_model_max_size)
+
+def rating_feature_importance():
+    # load training and test data from given path
+    ... 
+    # load model from given path
+    with open(actual_cell_model_path, 'rb') as f:
+        cell_model:voting_model = pickle.load(f)
+    with open(actual_sams_model_path, 'rb') as f:
+        sams_model:voting_model = pickle.load(f) 
+    
+    # load reducer
+    with open(actual_cell_model_path, 'rb') as f:
+        cell_reducer = pickle.load(f)
+    with open(actual_sams_model_path, 'rb') as f:
+        sams_reducer:voting_model = pickle.load(f) 
+   
+    # load scalar
+    with open(actual_cell_model_path, 'rb') as f:
+        cell_model:voting_model = pickle.load(f)
+    with open(actual_sams_model_path, 'rb') as f:
+        sams_model:voting_model = pickle.load(f) 
+    
+    # load reflector
+    with open(actual_cell_model_path, 'rb') as f:
+        cell_model:voting_model = pickle.load(f)
+    with open(actual_sams_model_path, 'rb') as f:
+        sams_model:voting_model = pickle.load(f) 
+    
+    # ---------------------------------
+    # rating cell model features
+    model_rating_and_importance_analysis(cell_x_train, cell_x_test, cell_y_test, cell_model, actual_cell_scalar_path, actual_cell_reducer_path, feature_reflection_list) 
+    # rating sams model features
+    model_rating_and_importance_analysis(mole_x_train, mole_x_test, mole_y_test, sams_model, actual_sams_reducer_path, acatual_sams_scalar_path, feature_reflection_list)
 
 def predict_data():
-    ...
+    '''using given essemble model for data predicting'''
+    def predict_data_core(model:voting_model, x_data:np.ndarray, y_data:np.ndarray, means):
+        ...
+    # get datas from file
+    cell_data_predict = np.loadtxt(predict_data_path)
+    cell_x_data_predict = np.concatenate((cell_data_predict[:, :50], cell_data_predict[:,59:]), axis=1)
+    cell_y_data_predict = cell_data_predict[:, 51:58]
+    # load mole data again
+    mole_data = np.loadtxt(mole_data_path)
+    
+    # load model
+    with open(actual_cell_model_path, 'rb') as f:
+        cell_model:voting_model = pickle.load(f)
+    with open(actual_sams_model_path, 'rb') as f:
+        sam_model:voting_model = pickle.load(f) 
 
+    # predict avg cell performance
+    cell_result = cell_model.predict(cell_x_data_predict)
+
+    # got results of mole data
+    sam_result = sam_model.predict(mole_data)
+
+    # sort both data, find best comparasion(mark the original sequence)
+    cell_index_array = np.arange(cell_result.shape[0]).reshape(-1, 1)
+    sam_index_array = np.arange(sam_result.shape[0]).reshape(-1, 1)
+    cell_result = np.hstack((cell_result, cell_index_array))
+    sam_result = np.hstack((sam_result, sam_index_array))
+    cell_result = cell_result[cell_result[:, 0].argsort()] 
+    sam_result = sam_result[sam_result[:, 0].argsort()]
+    write_content_to_file(predict_result_saving_path+'cell_result.txt', cell_result)
+    write_content_to_file(predict_result_saving_path+'sam_result.txt', cell_result)
 
 def main():
-    
-    device_data_path = ''
-    mole_device_data_path=''
-    mole_data_path = ''
-    onehot_reflection_data_path = ''
-    cell_model_dir = ''
-    sams_model_dir = ''
-    actual_cell_model_path = ''
-    actual_sams_model_path =''
-    actual_cell_reducer_path = ''
-    actual_cell_scalar_path = ''
-    actual_sams_reducer_path = ''
-    acatual_sams_scalar_path = ''
-
-    cell_reserve_r2_ratio=0.9
-    sam_reserve_r2_ratio=0.75
-    cell_model_max_size =1000
-    sam_model_max_size = 1000
-
+    # cell data
     cell_device_data = np.loadtxt(device_data_path)
-    mole_device_data = np.loadtxt(mole_device_data_path)
-    mole_data = np.loadtxt(mole_data_path) 
     cell_x_data = np.concatenate((cell_device_data[:, :50], cell_device_data[:,59:]), axis=1)
     cell_y_data = cell_device_data[:, 51:58]
-    mole_x_data =  np.concatenate((mole_device_data[:, :50], mole_device_data[:,59:]), axis=1)
-    mole_y_data = mole_device_data[:, 51:58]
-    del cell_device_data
-    del mole_device_data
-    
+    # sams data
+    sam_device_data = np.loadtxt(mole_device_data_path)
+    sam_cell_x_data = np.concatenate((sam_device_data[:, :50], sam_device_data[:,59:]), axis=1)
+    sam_cell_y_data = sam_device_data[:, 51:58]
+    mole_data = np.loadtxt(mole_data_path) 
+     
     #-----------------------------------
     # binning
-    cell_y_data, cell_mean_list = binning(cell_y_data)
-    mole_y_data, mole_mean_list = binning(mole_y_data)  
-     
-    # reserve some test data for importance analysis
+    cell_y_data, cell_mean_list, binning_range = binning_num_arr(cell_y_data)
+    # saving means and range data from binning
+    write_content_to_file(binning_means_path, cell_mean_list)
+    write_content_to_file(binning_range_path, binning_range)
+    
+    sam_cell_y_data = binning_based_on_range(sam_cell_y_data, binning_range)
+    
+    #-----------------------------------
+    # build train and test data
     cell_x_train, cell_x_test, cell_y_train, cell_y_test = train_test_split(cell_x_data, cell_y_data, test_size=0.2, random_state=42, stratify=cell_y_data) 
-    mole_x_train, mole_x_test, mole_y_train, mole_y_test = train_test_split(mole_x_data, mole_y_data, test_size=0.15, random_state=42, stratify=mole_y_data)
-    
-    #-----------------------------------
-    # build training and test data for cell model
-    build_cell_models(cell_x_train, cell_y_train, cell_model_max_size, cell_reserve_r2_ratio, cell_model_dir)
-    # for model for sams, using all data to fitting  
-    build_SAMs_model(mole_x_train, mole_y_train, sam_model_max_size, sam_reserve_r2_ratio, actual_cell_model_path, sams_model_dir)
-    
-    #-----------------------------------
-    # rating importance of each feature
-    model_rating_and_importance_analysis(cell_x_train, cell_x_test, cell_y_test, actual_cell_model_path, actual_cell_scalar_path, actual_cell_reducer_path, onehot_reflection_list) 
-    model_rating_and_importance_analysis()
-
-    # Predict data
-    data_for_predict_path = ''
-    predict_data = np.loadtxt(data_for_predict_path)
-    # load cells model
-    # load sams model
-    # predict cells perfromance
-    # predict sams performance
-    # ranking
-    # reflection classified predict_value to original data
-
-    # reflection classified predict_value to original data
+    # build train and test data for sams
+    # first merge
+    device_data_size = sam_cell_x_data.shape[1]
+    merged_mole_data = np.concatenate((sam_cell_x_data, mole_data), axis=1)
+    merged_cell_x_train, merged_cell_x_test, sam_cell_y_train, sam_cell_y_test = train_test_split(merged_mole_data, sam_mole_y_data, test_size=0.15, random_state=42, stratify=mole_y_data)
+    # devide the merged results 
+    sam_cell_x_train = merged_cell_x_train[:, :device_data_size]
+    sam_cell_x_test = merged_cell_x_test[:, :device_data_size]
+    mole_x_train = merged_cell_x_train[:, device_data_size:]
+    mole_x_test = merged_cell_x_test[:, device_data_size:]
+    # saving devided training and test data
+    ...
+    selection = 1
+    if(selection == 1):
+        # cell model selection
+        build_cell_model(cell_x_train, cell_y_train)
+    elif(selection == 2):
+        # mole model selection
+        build_sams_model(sam_cell_x_train, sam_cell_y_train, mole_x_train, mole_data)
+    elif(selection == 3):
+        # rating
+        rating_feature_importance()
+    elif(selection == 4):
+        predict_data()
 
 if __name__ == "__main__":
     main()

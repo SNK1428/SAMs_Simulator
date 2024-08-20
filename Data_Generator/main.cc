@@ -133,7 +133,10 @@ void device_jv_check(std::vector<std::vector<std::string>>& device_data)
             // 数据写入
             results.emplace_back(device_data[i]);
         }
+    
+
     }
+    // replace jv data of the raw sets
     device_data = results;
 }
 

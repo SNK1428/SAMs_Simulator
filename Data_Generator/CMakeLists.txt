@@ -22,11 +22,11 @@ file(
 
 set(MAIN_EXECUTABLE_NAME Onehot_Generator) 
 set(PREDICT_EXECUTABLE_NAME Predictor)
+SET(PREDICT_ANALYSIST_EXECUTABLE_NAME Data_Analysist)
 
 add_executable(${MAIN_EXECUTABLE_NAME} ${SRC_FILES} main.cc)
-# add_executable(${PREDICT_EXECUTABLE_NAME} ${SRC_FILES} data_generator.cc)
 add_executable(${PREDICT_EXECUTABLE_NAME} ${SOURCE_DIR}/utils/utils_2.cc ${SOURCE_DIR}/read_params/Config.cc data_generator.cc)
-
+add_executable(${PREDICT_ANALYSIST_EXECUTABLE_NAME} predict_data_analysis.cc)
 # 禁用所有报警(gcc)
 TARGET_COMPILE_OPTIONS(${MAIN_EXECUTABLE_NAME} PUBLIC -w)
 TARGET_COMPILE_OPTIONS(${PREDICT_EXECUTABLE_NAME} PUBLIC -w)

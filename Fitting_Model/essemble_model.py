@@ -57,43 +57,6 @@ from params import *
 # 数据读取与预处理
 
 
-def load_cell_data(cell_data_path:str) -> np.ndarray:
-    return np.loadtxt(cell_data_path)
-
-def load_moles_data(mole_data_path:str) -> np.ndarray:
-    return np.loadtxt(mole_data_path)
-
-def pca_method(x_data, n_components, scaler_path, pca_path):
-    """
-    使用缓存模型进行归一化和PCA降维
-    """
-    # 定义lambda方法
-    normalize_data = lambda x: (StandardScaler().fit_transform(x), StandardScaler().fit(x))
-    perform_pca = lambda x, n: (PCA(n_components=n).fit_transform(x), PCA(n_components=n).fit(x))
-    save_model = lambda model, path: pickle.dump(model, open(path, 'wb'))
-    load_model = lambda path: pickle.load(open(path, 'rb'))
-    models_exist = lambda sp, pp: os.path.exists(sp) and os.path.exists(pp)
-
-    if models_exist(scaler_path, pca_path):
-        # 加载模型
-        scaler = load_model(scaler_path)
-        pca = load_model(pca_path)
-    else:
-        # 归一化数据并保存模型
-        x_normalized, scaler = normalize_data(x_data)
-        save_model(scaler, scaler_path)
-
-        # 执行PCA并保存模型
-        x_pca, pca = perform_pca(x_normalized, n_components)
-        save_model(pca, pca_path)
-
-    # 对输入数据进行转换
-    x_normalized = scaler.transform(x_data)
-    x_pca = pca.transform(x_normalized)
-
-    return x_pca, pca.components_, pca.explained_variance_ratio_
-
-
 def binning_num_arr(y_data:np.ndarray, num_buckets=10, method='uniform', min_bucket_size=5):
     '''分桶
         num_buckets 分为几桶
@@ -817,14 +780,6 @@ def build_SAMs_model(x_data, y_data, mole_data:np.ndarray, max_reserve_model_siz
     
     model_builder(x_data, y_input, model_saving_dir, reduction_methods, imbalance_methods, scaler_methods, n_components, reserve_r2_ratio, max_reserve_model_size)
 
-def load_data():
-    '''读取数据，并处理为标准输入形式（iris集形式）'''
-    # 读取
-    # 分桶
-    # 重采样
-    x_data, y_data = load_iris_shuffle()
-    return x_data, y_data
-
 def model_rating_and_importance_analysis(x_train:np.ndarray, x_test:np.ndarray, y_test:np.ndarray, model_path:str, reducer_path:str, onehot_reflection_list:None):
     # 评价每一个模型的特征重要性
     def map_feature_importance_back(feature_importances:np.ndarray, reducer, method:str) -> np.ndarray:
@@ -913,6 +868,15 @@ sam_model_max_size = 1000
 
 
 reduction_component = 1800  # components reserved scale in dimention reduction procedure
+
+def load_data():
+    '''读取数据，并处理为标准输入形式（iris集形式）'''
+    # 读取
+    # 分桶
+    # 重采样
+    x_data, y_data = load_iris_shuffle()
+    return x_data, y_data
+
 
 def build_cell_model(cell_x_data:np.ndarray, cell_y_data:np.ndarray):
     # 降维方式：在外部确定，因为sams不需要
@@ -1045,18 +1009,13 @@ def main():
     mole_x_test = merged_cell_x_test[:, device_data_size:]
     # saving devided training and test data
     ...
-    selection = 1
-    if(selection == 1):
-        # cell model selection
-        build_cell_model(cell_x_train, cell_y_train)
-    elif(selection == 2):
-        # mole model selection
-        build_sams_model(sam_cell_x_train, sam_cell_y_train, mole_x_train, mole_data)
-    elif(selection == 3):
-        # rating
-        rating_feature_importance()
-    elif(selection == 4):
-        predict_data()
+    # cell model selection
+    build_cell_model(cell_x_train, cell_y_train)
+    # mole model selection
+    build_sams_model(sam_cell_x_train, sam_cell_y_train, mole_x_train, mole_data)
+    # rating
+    rating_feature_importance()
+    predict_data()
 
 if __name__ == "__main__":
     main()

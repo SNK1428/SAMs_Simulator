@@ -612,6 +612,8 @@ def map_feature_importance_back(feature_importances:np.ndarray, reducer, X_origi
     return X_recovered
 
 def onehot_importance_reflection(importance_list, index_list:list, index_maps:dict) -> list:
+    # According to onehot features classification list, reflect feature importance from raw feature to onehot feature
+    # No significant literature support
     index_kinds = set()
     for index in index_list:
         index_kinds.add(index_maps[index])
@@ -780,7 +782,7 @@ def build_SAMs_model(x_data, y_data, mole_data:np.ndarray, max_reserve_model_siz
     
     model_builder(x_data, y_input, model_saving_dir, reduction_methods, imbalance_methods, scaler_methods, n_components, reserve_r2_ratio, max_reserve_model_size)
 
-def model_rating_and_importance_analysis(x_train:np.ndarray, x_test:np.ndarray, y_test:np.ndarray, model_path:str, reducer_path:str, onehot_reflection_list:None):
+def model_rating_and_importance_analysis(x_train:np.ndarray, x_test:np.ndarray, y_test:np.ndarray, model_path:str, reducer_path:str, onehot_reflection_list:None, collinearity_reflection_list=None):
     # 评价每一个模型的特征重要性
     def map_feature_importance_back(feature_importances:np.ndarray, reducer, method:str) -> np.ndarray:
         # 确保 feature_importances 是 2 维数组
@@ -834,6 +836,12 @@ def model_rating_and_importance_analysis(x_train:np.ndarray, x_test:np.ndarray, 
     if(onehot_reflection_list is not None):
         onehot_importance_per = onehot_importance_reflection(per_importance_list_re, onehot_reflection_list, index_maps)
         onehot_importance_shap = onehot_importance_reflection(shap_importance_list_re, onehot_reflection_list, index_maps)
+    # reflection importance to orginal features based on collinearity matrix 
+    if(collinearity_reflection_list is not None):
+        ...
+
+
+#---------------------------------------------------------------------------------------
 
 device_data_path = ''
 mole_device_data_path=''
@@ -841,10 +849,14 @@ mole_data_path = ''
 predict_data_path = ''
 onehot_reflection_data_path = ''
 
-cell_training_data_path = ''
-cell_test_data_path = ''
-sam_training_data_path = ''
-sam_test_data_path = ''
+cell_training_x_data_path = ''
+cell_training_y_data_path = ''
+cell_test_data_x_path = ''
+cell_test_data_y_path = ''
+sam_training_x_data_path = ''
+sam_training_y_data_path = ''
+sam_test_x_data_path = ''
+sam_test_y_data_path = ''
 
 cell_model_dir = ''
 sams_model_dir = ''
@@ -860,6 +872,9 @@ acatual_sams_scalar_path = ''
 
 binning_means_path = ''
 binning_range_path = ''
+
+importance_reflection_list = ''
+collinearity_reflection_list = ''
 
 cell_reserve_r2_ratio=0.9
 sam_reserve_r2_ratio=0.75
@@ -888,7 +903,8 @@ def build_cell_model(cell_x_data:np.ndarray, cell_y_data:np.ndarray):
     model_builder(cell_x_data, cell_y_data, cell_model_dir, cell_reduction_methods, cell_imbalance_methods, cell_scaler_methods, reduction_component, cell_reserve_r2_ratio, cell_model_max_size)
 
     # search best model
-
+    
+    # saving best model
 
 def build_sams_model(cell_x_data:np.ndarray, cell_y_data:np.ndarray, mole_x_data:np.ndarray):
     # 降维方式：在外部确定，因为SAMs不需要
@@ -908,9 +924,24 @@ def build_sams_model(cell_x_data:np.ndarray, cell_y_data:np.ndarray, mole_x_data
     
     # search best model
 
+    # saving best model
+
 def rating_feature_importance():
     # load training and test data from given path
-    ... 
+    cell_train_x_data = np.loadtxt(cell_training_x_data_path)
+    cell_train_y_data = np.loadtxt(cell_training_x_data_path)
+    cell_test_x_data = np.loadtxt(cell_test_data_x_path)
+    cell_test_y_data = np.loadtxt(cell_test_data_x_path)
+    
+    mole_train_x_data = np.loadtxt(sam_training_x_data_path)
+    mole_train_y_data = np.loadtxt(sam_training_y_data_path)
+    mole_test_x_data = np.loadtxt(sam_test_x_data_path)
+    mole_test_y_data = np.loadtxt(sam_test_y_data_path)
+    
+    # load feature reflection list
+    
+
+
     # load model from given path
     with open(actual_cell_model_path, 'rb') as f:
         cell_model:voting_model = pickle.load(f)
@@ -937,18 +968,16 @@ def rating_feature_importance():
     
     # ---------------------------------
     # rating cell model features
-    model_rating_and_importance_analysis(cell_x_train, cell_x_test, cell_y_test, cell_model, actual_cell_scalar_path, actual_cell_reducer_path, feature_reflection_list) 
+    model_rating_and_importance_analysis(cell_train_x_data, cell_test_x_data, cell_test_y_data, cell_model, actual_cell_scalar_path, actual_cell_reducer_path, feature_reflection_list) 
     # rating sams model features
-    model_rating_and_importance_analysis(mole_x_train, mole_x_test, mole_y_test, sams_model, actual_sams_reducer_path, acatual_sams_scalar_path, feature_reflection_list)
+    model_rating_and_importance_analysis(mole_train_x_data, mole_test_x_data, mole_test_y_data, sams_model, actual_sams_reducer_path, acatual_sams_scalar_path, feature_reflection_list)
 
 def predict_data():
     '''using given essemble model for data predicting'''
-    def predict_data_core(model:voting_model, x_data:np.ndarray, y_data:np.ndarray, means):
-        ...
     # get datas from file
     cell_data_predict = np.loadtxt(predict_data_path)
     cell_x_data_predict = np.concatenate((cell_data_predict[:, :50], cell_data_predict[:,59:]), axis=1)
-    cell_y_data_predict = cell_data_predict[:, 51:58]
+    # cell_y_data_predict = cell_data_predict[:, 51:58]
     # load mole data again
     mole_data = np.loadtxt(mole_data_path)
     
@@ -1001,20 +1030,29 @@ def main():
     # first merge
     device_data_size = sam_cell_x_data.shape[1]
     merged_mole_data = np.concatenate((sam_cell_x_data, mole_data), axis=1)
-    merged_cell_x_train, merged_cell_x_test, sam_cell_y_train, sam_cell_y_test = train_test_split(merged_mole_data, sam_mole_y_data, test_size=0.15, random_state=42, stratify=mole_y_data)
+    merged_cell_x_train, merged_cell_x_test, sam_cell_y_train, sam_cell_y_test = train_test_split(merged_mole_data, sam_cell_y_data, test_size=0.15, random_state=42, stratify=mole_y_data)
     # devide the merged results 
     sam_cell_x_train = merged_cell_x_train[:, :device_data_size]
     sam_cell_x_test = merged_cell_x_test[:, :device_data_size]
     mole_x_train = merged_cell_x_train[:, device_data_size:]
     mole_x_test = merged_cell_x_test[:, device_data_size:]
-    # saving devided training and test data
-    ...
-    # cell model selection
+
+    #-----------------------------------
+    # cell model build
     build_cell_model(cell_x_train, cell_y_train)
-    # mole model selection
+    
+    # predict and saving sams training data
+    # saving all data 
+    
+    # mole model build
     build_sams_model(sam_cell_x_train, sam_cell_y_train, mole_x_train, mole_data)
+    
+    #-----------------------------------
     # rating
     rating_feature_importance()
+    
+    #-----------------------------------
+    # predict
     predict_data()
 
 if __name__ == "__main__":
